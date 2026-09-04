@@ -328,3 +328,28 @@ footer{background:#102019;color:#fff;padding:65px 0 20px}
 .insight{padding:120px 0;background:#f4f7f5}.center-heading h2{font-size:40px}.recipes{background:#173c2c}.recipes .eyebrow,.recipes .recipe-top h2,.recipes .text-link{color:#fff}.recipes .eyebrow{color:#b8e9c8}.recipes .text-link span{color:#b8e9c8}.chips button{background:transparent;border-color:#ffffff47;color:#e1eee5}.chips .active,.chips button:hover{background:#fff;color:var(--deep);border-color:#fff}.recipe-grid{grid-template-columns:repeat(3,1fr)}.recipe{height:360px}.recipe-one{background-image:url('assets/figma-recipe-1.png')}.recipe-two{background-image:url('assets/figma-recipe-2.png')}.recipe-three{background-image:url('assets/figma-recipe-3.png')}
 .stories{background:#f4f7f5;color:var(--ink)}.stories .eyebrow{color:var(--green)}.story-grid article{border:1px solid #e2e8e4;box-shadow:0 10px 20px #10201908}.av-one{background-image:url('assets/figma-avatar-1.png')}.av-two{background-image:url('assets/figma-avatar-2.png')}
 @media(max-width:800px){.hero{height:760px;min-height:760px}.hero-content{padding-top:138px}.hero h1{font-size:42px}.hero-copy{font-size:14px}.hero-phone{width:270px;height:160px;border-radius:24px 24px 0 0;padding:8px 8px 0}.hero-phone img{border-radius:17px 17px 0 0}.topbar{height:62px}.topbar.open .nav{background:#f4f7f5;color:var(--ink)}.statement{padding:85px 20px}.value-grid article{padding:20px}.feature-photo{height:190px}.ai-layout{gap:28px}.ai-copy{order:1}.scan-stage{height:350px;order:2}.recipe-grid{grid-template-columns:1fr}.recipe{height:320px}.stories{padding:85px 0}.brand-dot{display:none}}
+
+/* Restrained premium system: geometry, depth and material */
+:root{--paper:#f3f4f1;--ink:#142019;--muted:#68736c;--green:#286f4d;--deep:#0d2118;--mint:#dfeae3;--gold:#ad7a3d;--line:#d8dfda}
+body *{border-radius:6px!important}
+.brand-mark,.brand-dot,.avatar,.scan-ring,.scan-dot,.donut,.donut>div,.legend i{border-radius:50%!important}
+.topbar{border-bottom:1px solid transparent}
+.topbar.scrolled{box-shadow:none;border-bottom-color:var(--line);backdrop-filter:blur(20px)}
+.button{border-radius:6px!important;box-shadow:none;letter-spacing:.02em}
+.button:hover{transform:translateY(-1px)}
+.phone,.hero-phone,.phone-screen{border-radius:6px!important}
+.hero-phone img,.feature-photo,.scan-stage img{border-radius:4px!important}
+.card,.value-grid article,.story-grid article,.plan,.water-card{border:1px solid var(--line);box-shadow:none}
+.value-grid article,.story-grid article,.plan,.card{background:#fdfefd}
+.water-card{box-shadow:6px 6px 0 #c8d8ce}
+.recipe{border:1px solid #ffffff26;box-shadow:none}
+.recipe:hover{transform:translateY(-2px)}
+.billing,.billing button,.chips button,.store-buttons a,.store-buttons button,.qr-card,.qr-card img,.daily-score,.download-screen button{border-radius:6px!important}
+.billing button.selected{box-shadow:none;border:1px solid var(--line)}
+.plan.featured{box-shadow:none;border-color:var(--green)}
+.store-buttons a:hover,.store-buttons button:hover{transform:translateY(-1px)}
+.progress,.bar,.score-bar,.progress i,.bar i,.score-bar i{border-radius:3px!important}
+.popular{border-radius:0 0 4px 4px!important}
+.statement{background:#e4e5df}
+.eyebrow{letter-spacing:.2em}
+@media(max-width:800px){.topbar.open .nav{border:1px solid var(--line);box-shadow:none}.hero-phone,.hero-phone img{border-radius:6px 6px 0 0!important}}
