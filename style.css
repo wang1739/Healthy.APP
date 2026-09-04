@@ -1,6 +1,6 @@
 :root{--paper:#f4f7f5;--ink:#17211c;--muted:#6c7770;--green:#2f7d57;--deep:#102019;--mint:#dcefe3;--gold:#c98a42;--coral:#d96078;--line:#dce3de}
 *{box-sizing:border-box}
-html{scroll-behavior:smooth}
+html{scroll-behavior:smooth;scroll-padding-top:72px}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:'Noto Sans SC',sans-serif;line-height:1.72}
 a{text-decoration:none;color:inherit}
 .wrap{width:min(1200px,calc(100% - 128px));margin:auto}
@@ -11,6 +11,10 @@ a{text-decoration:none;color:inherit}
 .nav{display:flex;gap:25px;font-size:14px;font-weight:500}
 .nav a{opacity:.8;transition:.2s}
 .nav a:hover{opacity:1;color:#b8e9c8}
+.nav a{position:relative;padding-bottom:3px}
+.nav a::after{content:'';position:absolute;left:0;right:0;bottom:-2px;height:2px;border-radius:2px;background:currentColor;transform:scaleX(0);transform-origin:left;transition:transform .25s}
+.nav a.active{opacity:1}
+.nav a.active::after{transform:scaleX(1)}
 .button{background:var(--green);color:#fff;border:1px solid var(--green);border-radius:999px;padding:13px 21px;display:inline-flex;gap:16px;align-items:center;font-size:14px;font-weight:700;transition:.25s}
 .button:hover{transform:translateY(-2px);background:#236c49}
 .button-small{padding:9px 16px;font-size:13px}
@@ -195,10 +199,19 @@ section{scroll-margin-top:60px}
 .download h2{font-size:clamp(43px,5vw,65px)}
 .download-layout>div>p:not(.eyebrow){color:#becbc3;font-size:15px;margin:19px 0 26px}
 .store-buttons{display:flex;gap:10px}
-.store-buttons a{border:1px solid #ffffff5c;border-radius:9px;display:flex;align-items:center;gap:8px;padding:7px 13px;font:10px 'Noto Sans SC',sans-serif;line-height:1.4}
+.store-buttons a,.store-buttons button{border:1px solid #ffffff5c;border-radius:9px;display:flex;align-items:center;gap:8px;padding:7px 13px;font:10px 'Noto Sans SC',sans-serif;line-height:1.4;background:transparent;color:inherit;cursor:pointer;text-align:left}
 .store-icon{width:23px;height:23px;display:grid;place-items:center;font-size:18px;line-height:1;color:#fff}
 .store-icon.android{font-size:16px}
 .store-buttons b{font-size:15px}
+.store-buttons a,.store-buttons button{transition:.25s}
+.store-buttons a:hover,.store-buttons button:hover{background:#ffffff14;border-color:#fff;transform:translateY(-2px)}
+.store-buttons a.recommended,.store-buttons button.recommended{border-color:#b8e9c8;box-shadow:0 0 0 3px #b8e9c833}
+.qr-card{display:inline-flex;align-items:center;gap:14px;margin-top:22px;padding:10px 16px 10px 10px;border:1px solid #ffffff2e;border-radius:14px;background:#ffffff0d;color:#d7e3db;font-size:12px}
+.qr-card img{width:84px;height:84px;border-radius:8px;background:#fff;display:block}
+.qr-card.no-img img{display:none}
+.qr-card.no-img::before{content:'二维码';display:grid;place-items:center;width:84px;height:84px;border-radius:8px;background:#ffffff1a;font-size:11px;color:#9fb3a7}
+.recipe-empty{margin:0;padding:48px 0;text-align:center;color:#b8e9c8;font-size:14px}
+.recipe[hidden]{display:none}
 .download-phone{height:420px;justify-self:end;margin-right:100px;margin-bottom:-110px;border-color:#304b3b;transform:rotate(-7deg)}
 .download-screen{padding:14px;background:#dcefe3;color:var(--ink)}
 .download-screen>p{font-size:12px;color:var(--green);margin:32px 0 3px}
