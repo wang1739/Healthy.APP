@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#f4f7f5" />
+  <title>今日饮食记录 — 轻食记</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono&family=Inter:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="nutrition.css" />
+</head>
+<body class="nutrition-page">
+  <header class="tracker-topbar">
+    <a class="brand" href="index.html" aria-label="返回轻食记官网"><span class="brand-mark">轻</span><span>轻食记</span><i class="brand-dot"></i></a>
+    <div class="tracker-nav">
+      <a href="index.html">返回官网</a>
+      <span class="today-nav">今日记录</span>
+      <button class="button button-small js-add-food" type="button">添加食物 <span>＋</span></button>
+    </div>
+  </header>
+
+  <main class="tracker-shell">
+    <section class="tracker-hero" aria-labelledby="tracker-title">
+      <div>
+        <p class="tracker-kicker">每日营养 · 减脂计划</p>
+        <h1 id="tracker-title">今天，也认真吃饭。</h1>
+        <p>记录每一餐，让身体的变化有迹可循。</p>
+      </div>
+      <div class="date-panel" aria-label="选择记录日期">
+        <button type="button" id="prev-day" aria-label="查看前一天">←</button>
+        <div><strong id="date-label">今天</strong><span id="date-full"></span></div>
+        <button type="button" id="next-day" aria-label="查看后一天">→</button>
+        <button type="button" class="today-button" id="today-button">回到今天</button>
+      </div>
+    </section>
+
+    <section class="summary-section" aria-labelledby="summary-title">
+      <div class="section-heading">
+        <div><p class="mini-label">今日总览</p><h2 id="summary-title">你的营养进度</h2></div>
+        <button class="quiet-button" id="open-goals" type="button">调整目标</button>
+      </div>
+      <div class="summary-grid">
+        <article class="summary-card calories" data-metric="kcal"><span>热量</span><strong><b>0</b> <small>kcal</small></strong><p>目标 1600 kcal</p><div class="metric-bar" role="progressbar" aria-label="热量进度"><i></i></div><em>还差 1600 kcal</em></article>
+        <article class="summary-card protein" data-metric="protein"><span>蛋白质</span><strong><b>0</b> <small>g</small></strong><p>目标 100 g</p><div class="metric-bar" role="progressbar" aria-label="蛋白质进度"><i></i></div><em>还差 100 g</em></article>
+        <article class="summary-card carbs" data-metric="carbs"><span>碳水</span><strong><b>0</b> <small>g</small></strong><p>目标 180 g</p><div class="metric-bar" role="progressbar" aria-label="碳水进度"><i></i></div><em>还差 180 g</em></article>
+        <article class="summary-card fat" data-metric="fat"><span>脂肪</span><strong><b>0</b> <small>g</small></strong><p>目标 50 g</p><div class="metric-bar" role="progressbar" aria-label="脂肪进度"><i></i></div><em>还差 50 g</em></article>
+      </div>
+    </section>
+
+    <div class="tracker-layout">
+      <section class="meals-panel" aria-labelledby="meals-title">
+        <div class="section-heading meals-heading">
+          <div><p class="mini-label">饮食记录</p><h2 id="meals-title">今天吃了什么</h2></div>
+          <button class="quiet-button danger" id="clear-day" type="button">清空当天</button>
+        </div>
+        <div id="meal-groups"></div>
+      </section>
+
+      <aside class="tracker-aside">
+        <section class="score-card">
+          <div class="score-ring" id="score-ring"><div><b id="health-score">0</b><span>分</span></div></div>
+          <div><p class="mini-label">今日完成度</p><h3 id="score-title">从第一餐开始</h3><span id="score-copy">记录后会实时计算完成度</span></div>
+        </section>
+
+        <section class="water-tracker" aria-labelledby="water-title">
+          <div class="side-title"><div><p class="mini-label">饮水记录</p><h3 id="water-title">今天喝水了吗？</h3></div><strong><b id="water-count">0</b> / <span id="water-goal">8</span> 杯</strong></div>
+          <div class="water-cups" id="water-cups" aria-label="饮水进度"></div>
+          <div class="water-actions"><button type="button" id="water-minus" aria-label="减少一杯水">− 一杯</button><button type="button" id="water-plus">＋ 加一杯</button></div>
+        </section>
+
+        <section class="advice-card" aria-labelledby="advice-title">
+          <p class="mini-label">今日建议</p><h3 id="advice-title">下一餐怎么吃</h3><ul id="advice-list"></ul>
+        </section>
+
+        <section class="trend-card" aria-labelledby="trend-title">
+          <div class="side-title"><div><p class="mini-label">近 7 天</p><h3 id="trend-title">热量趋势</h3></div><span>目标线</span></div>
+          <div class="trend-chart" id="trend-chart" aria-label="最近七天热量柱状图"></div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <button class="mobile-add js-add-food" type="button">＋ 记录这一餐</button>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <dialog class="tracker-dialog" id="food-dialog" aria-labelledby="food-dialog-title">
+    <form id="food-form" novalidate>
+      <div class="dialog-head"><div><p class="mini-label">饮食记录</p><h2 id="food-dialog-title">添加食物</h2></div><button class="icon-button" type="button" data-close="food-dialog" aria-label="关闭">×</button></div>
+      <label>记录到<select id="meal-select" name="meal"><option value="breakfast">早餐</option><option value="lunch">午餐</option><option value="dinner">晚餐</option><option value="snack">加餐</option></select></label>
+      <div class="form-tabs" role="tablist"><button class="active" type="button" data-form-mode="library">常见食物</button><button type="button" data-form-mode="manual">手动添加</button></div>
+
+      <div id="library-fields">
+        <label>搜索食物<input id="food-search" type="search" placeholder="搜索鸡蛋、米饭、鸡胸肉…" autocomplete="off" /></label>
+        <div class="food-results" id="food-results" role="listbox" aria-label="常见食物搜索结果"></div>
+        <div class="portion-row">
+          <label>常用份量<select id="portion-select"><option value="">自定义克数</option></select></label>
+          <label>本次克数<input id="food-grams" type="number" min="1" max="5000" step="1" value="100" inputmode="decimal" /></label>
+        </div>
+        <div class="nutrition-preview" id="nutrition-preview"><span>请选择一种食物</span></div>
+      </div>
+
+      <div id="manual-fields" hidden>
+        <label>食物名称<input id="manual-name" type="text" maxlength="30" placeholder="例如：自制杂粮饭" /></label>
+        <div class="manual-grid">
+          <label>份量（克）<input id="manual-grams" type="number" min="1" max="5000" step="1" inputmode="decimal" /></label>
+          <label>热量（kcal）<input id="manual-kcal" type="number" min="0" max="10000" step="1" inputmode="decimal" /></label>
+          <label>蛋白质（g）<input id="manual-protein" type="number" min="0" max="1000" step="0.1" inputmode="decimal" /></label>
+          <label>碳水（g）<input id="manual-carbs" type="number" min="0" max="1000" step="0.1" inputmode="decimal" /></label>
+          <label>脂肪（g）<input id="manual-fat" type="number" min="0" max="1000" step="0.1" inputmode="decimal" /></label>
+        </div>
+        <label class="check-label"><input id="save-custom" type="checkbox" /> 保存到“我的食物”</label>
+      </div>
+      <p class="form-error" id="food-error" role="alert"></p>
+      <div class="dialog-actions"><button class="quiet-button" type="button" data-close="food-dialog">取消</button><button class="button" type="submit">保存记录</button></div>
+    </form>
+  </dialog>
+
+  <dialog class="tracker-dialog goals-dialog" id="goals-dialog" aria-labelledby="goals-dialog-title">
+    <form id="goals-form" novalidate>
+      <div class="dialog-head"><div><p class="mini-label">减脂计划</p><h2 id="goals-dialog-title">调整每日目标</h2></div><button class="icon-button" type="button" data-close="goals-dialog" aria-label="关闭">×</button></div>
+      <div class="manual-grid">
+        <label>热量（kcal）<input name="kcal" type="number" min="800" max="5000" step="10" /></label>
+        <label>蛋白质（g）<input name="protein" type="number" min="10" max="500" step="1" /></label>
+        <label>碳水（g）<input name="carbs" type="number" min="10" max="800" step="1" /></label>
+        <label>脂肪（g）<input name="fat" type="number" min="10" max="300" step="1" /></label>
+        <label>饮水（杯）<input name="water" type="number" min="1" max="30" step="1" /></label>
+      </div>
+      <p class="form-error" id="goals-error" role="alert"></p>
+      <div class="dialog-actions"><button class="quiet-button" type="button" data-close="goals-dialog">取消</button><button class="button" type="submit">保存目标</button></div>
+    </form>
+  </dialog>
+
+  <script src="foods.js"></script>
+  <script src="nutrition.js"></script>
+</body>
+</html>
