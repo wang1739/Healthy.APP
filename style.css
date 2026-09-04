@@ -195,8 +195,9 @@ section{scroll-margin-top:60px}
 .download h2{font-size:clamp(43px,5vw,65px)}
 .download-layout>div>p:not(.eyebrow){color:#becbc3;font-size:15px;margin:19px 0 26px}
 .store-buttons{display:flex;gap:10px}
-.store-buttons a{border:1px solid #ffffff5c;border-radius:9px;display:flex;align-items:center;gap:8px;padding:7px 13px;font:10px Inter;line-height:1.25}
-.store-buttons a:first-letter{font-size:23px}
+.store-buttons a{border:1px solid #ffffff5c;border-radius:9px;display:flex;align-items:center;gap:8px;padding:7px 13px;font:10px 'Noto Sans SC',sans-serif;line-height:1.4}
+.store-icon{width:23px;height:23px;display:grid;place-items:center;font-size:18px;line-height:1;color:#fff}
+.store-icon.android{font-size:16px}
 .store-buttons b{font-size:15px}
 .download-phone{height:420px;justify-self:end;margin-right:100px;margin-bottom:-110px;border-color:#304b3b;transform:rotate(-7deg)}
 .download-screen{padding:14px;background:#dcefe3;color:var(--ink)}

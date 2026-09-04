@@ -12,3 +12,9 @@ const stats = document.querySelector('.trust'); if(stats) statObserver.observe(s
 
 document.querySelectorAll('.chips button').forEach(button => button.addEventListener('click', () => { document.querySelector('.chips .active')?.classList.remove('active'); button.classList.add('active'); }));
 document.querySelectorAll('.billing button').forEach(button => button.addEventListener('click', () => { document.querySelector('.billing .selected')?.classList.remove('selected'); button.classList.add('selected'); }));
+
+document.querySelectorAll('.download-link').forEach(link => link.addEventListener('click', event => {
+  event.preventDefault();
+  const platform = link.dataset.platform;
+  alert(`轻食记 ${platform} 版即将上线，敬请期待！`);
+}));
