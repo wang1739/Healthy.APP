@@ -1,0 +1,15 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:lightbite;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+
+app:
+  cors:
+    allowed-origins: http://localhost:4173,http://127.0.0.1:4173

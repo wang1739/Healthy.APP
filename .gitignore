@@ -1,2 +1,5 @@
 /.codex-*
 /.superpowers/
+/.env
+/backend/target/
+/.mvn-cache/
