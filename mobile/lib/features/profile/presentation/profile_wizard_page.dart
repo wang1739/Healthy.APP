@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:healthy/core/api/api_client.dart';
@@ -31,14 +32,12 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
     '风险评估',
   ];
 
-  final _birthDate = TextEditingController(text: '1995-01-01');
+  final _birthDate = TextEditingController();
   final _height = TextEditingController();
   final _weight = TextEditingController();
   final _waist = TextEditingController();
-  final _sleep = TextEditingController(text: '7.5');
-  final _exerciseDays = TextEditingController(text: '3');
-  final _allergies = TextEditingController();
-  final _avoidFoods = TextEditingController();
+  final _otherAllergy = TextEditingController();
+  final _otherAvoidFood = TextEditingController();
   final _targetWeight = TextEditingController();
   final _targetDate = TextEditingController(
     text: _dateText(DateTime.now().add(const Duration(days: 120))),
@@ -59,6 +58,10 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
   bool _eatingDisorderRisk = false;
   bool _seriousDisease = false;
   bool _unsafeTarget = false;
+  double _sleepHours = 7.5;
+  int _exerciseDays = 3;
+  final Set<String> _allergies = {'无'};
+  final Set<String> _avoidFoods = {'无'};
 
   @override
   void initState() {
@@ -87,10 +90,8 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
       _height,
       _weight,
       _waist,
-      _sleep,
-      _exerciseDays,
-      _allergies,
-      _avoidFoods,
+      _otherAllergy,
+      _otherAvoidFood,
       _targetWeight,
       _targetDate,
     ]) {
@@ -144,15 +145,15 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
         });
       case 3:
         await widget.api.saveProfile({
-          'sleepHours': _number(_sleep, '请输入睡眠时长'),
-          'exerciseDays': _integer(_exerciseDays, '请输入每周运动天数'),
+          'sleepHours': _sleepHours,
+          'exerciseDays': _exerciseDays,
           'currentStep': 4,
         });
       case 4:
         await widget.api.savePreferences({
           'dietType': _dietType,
-          'allergies': _allergies.text.trim(),
-          'avoidFoods': _avoidFoods.text.trim(),
+          'allergies': _foodText(_allergies, _otherAllergy),
+          'avoidFoods': _foodText(_avoidFoods, _otherAvoidFood),
         });
         await widget.api.saveProfile({'currentStep': 5});
       case 5:
@@ -188,11 +189,11 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
     return value;
   }
 
-  int _integer(TextEditingController controller, String message) {
-    final value = int.tryParse(controller.text.trim());
-    if (value == null) throw FormatException(message);
-    return value;
-  }
+  String _foodText(Set<String> selected, TextEditingController other) => [
+    ...selected.where((item) => item != '无' && item != '其他'),
+    if (selected.contains('其他') && other.text.trim().isNotEmpty)
+      other.text.trim(),
+  ].join('、');
 
   @override
   Widget build(BuildContext context) {
@@ -291,9 +292,9 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
   Widget _stepContent() => switch (_step) {
     0 => Column(
       children: [
-        _field(_birthDate, '出生日期', hint: '1995-01-01'),
-        const SizedBox(height: 14),
-        _dropdown('性别', _sex, const {
+        _dateField(_birthDate, '出生日期', birthDate: true),
+        const SizedBox(height: 18),
+        _choices('性别', _sex, const {
           'FEMALE': '女',
           'MALE': '男',
           'OTHER': '其他',
@@ -302,23 +303,28 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
     ),
     1 => Column(
       children: [
-        _numberField(_height, '身高（cm）'),
+        _numberField(_height, '身高', unit: '厘米'),
         const SizedBox(height: 14),
-        _numberField(_weight, '当前体重（kg）'),
+        _numberField(
+          _weight,
+          '当前体重',
+          unit: '千克',
+          onChanged: (_) => _suggestTargetDate(),
+        ),
         const SizedBox(height: 14),
-        _numberField(_waist, '腰围（cm，可选）'),
+        _numberField(_waist, '腰围（可选）', unit: '厘米'),
       ],
     ),
     2 => Column(
       children: [
-        _dropdown('日常活动量', _activity, const {
+        _choices('日常活动量', _activity, const {
           'LOW': '很少活动',
           'LIGHT': '轻度活动',
           'MODERATE': '中等活动',
           'HIGH': '高强度活动',
         }, (value) => _activity = value),
         const SizedBox(height: 14),
-        _dropdown('工作状态', _workStyle, const {
+        _choices('工作状态', _workStyle, const {
           'SEDENTARY': '久坐',
           'MIXED': '坐立混合',
           'ACTIVE': '体力活动为主',
@@ -326,38 +332,89 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
       ],
     ),
     3 => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _numberField(_sleep, '每晚睡眠时长（小时）'),
-        const SizedBox(height: 14),
-        _numberField(_exerciseDays, '每周运动天数', integer: true),
+        Text('每晚睡眠：${_sleepHours.toStringAsFixed(1)} 小时'),
+        Slider(
+          value: _sleepHours,
+          min: 4,
+          max: 12,
+          divisions: 16,
+          label: '${_sleepHours.toStringAsFixed(1)} 小时',
+          onChanged: (value) => setState(() => _sleepHours = value),
+        ),
+        const SizedBox(height: 18),
+        _choices('每周运动天数', _exerciseDays.toString(), {
+          for (var day = 0; day <= 7; day++) '$day': '$day 天',
+        }, (value) => _exerciseDays = int.parse(value)),
       ],
     ),
     4 => Column(
       children: [
-        _dropdown('饮食方式', _dietType, const {
+        _choices('饮食方式', _dietType, const {
           'BALANCED': '均衡饮食',
           'VEGETARIAN': '素食',
           'LOW_CARB': '低碳水',
           'HIGH_PROTEIN': '高蛋白',
         }, (value) => _dietType = value),
-        const SizedBox(height: 14),
-        _field(_allergies, '过敏食物', hint: '没有可留空'),
-        const SizedBox(height: 14),
-        _field(_avoidFoods, '不吃的食物', hint: '没有可留空'),
+        const SizedBox(height: 18),
+        _foodChoices('过敏食物', _allergies, const [
+          '无',
+          '乳制品',
+          '鸡蛋',
+          '花生',
+          '坚果',
+          '海鲜',
+          '麸质',
+          '其他',
+        ], _otherAllergy),
+        const SizedBox(height: 18),
+        _foodChoices('不吃的食物', _avoidFoods, const [
+          '无',
+          '香菜',
+          '葱姜蒜',
+          '动物内脏',
+          '辛辣食物',
+          '其他',
+        ], _otherAvoidFood),
       ],
     ),
     5 => Column(
       children: [
-        _dropdown('主要目标', _goalType, const {
-          'FAT_LOSS': '减脂',
-          'MUSCLE_GAIN': '增肌',
-          'MAINTAIN': '维持体重',
-          'BETTER_DIET': '改善饮食',
-        }, (value) => _goalType = value),
+        _choices(
+          '主要目标',
+          _goalType,
+          const {
+            'FAT_LOSS': '减脂',
+            'MUSCLE_GAIN': '增肌',
+            'MAINTAIN': '维持体重',
+            'BETTER_DIET': '改善饮食',
+          },
+          (value) {
+            _goalType = value;
+            if (value == 'MAINTAIN' || value == 'BETTER_DIET') {
+              _targetWeight.clear();
+            }
+          },
+        ),
+        if (_goalType == 'FAT_LOSS' || _goalType == 'MUSCLE_GAIN') ...[
+          const SizedBox(height: 14),
+          _numberField(
+            _targetWeight,
+            '目标体重（可选）',
+            unit: '千克',
+            onChanged: (_) => _suggestTargetDate(),
+          ),
+        ],
         const SizedBox(height: 14),
-        _numberField(_targetWeight, '目标体重（kg，可选）'),
-        const SizedBox(height: 14),
-        _field(_targetDate, '目标日期', hint: '例如 2027-01-01'),
+        _dateField(_targetDate, '目标日期'),
+        if (_goalType == 'FAT_LOSS') ...[
+          const SizedBox(height: 8),
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Text('建议日期按每周约减重 0.5 千克估算，你可以调整。'),
+          ),
+        ],
       ],
     ),
     _ => Column(
@@ -383,46 +440,148 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
     ),
   };
 
-  Widget _field(
+  Widget _choices(
+    String label,
+    String value,
+    Map<String, String> values,
+    ValueChanged<String> onChanged,
+  ) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: values.entries
+            .map(
+              (entry) => ChoiceChip(
+                label: Text(entry.value),
+                selected: value == entry.key,
+                onSelected: (_) => setState(() => onChanged(entry.key)),
+              ),
+            )
+            .toList(),
+      ),
+    ],
+  );
+
+  Widget _dateField(
     TextEditingController controller,
     String label, {
-    String? hint,
+    bool birthDate = false,
   }) => TextField(
     controller: controller,
-    decoration: InputDecoration(labelText: label, hintText: hint),
+    readOnly: true,
+    onTap: () => _pickDate(controller, birthDate: birthDate),
+    decoration: InputDecoration(
+      labelText: label,
+      hintText: '点击选择',
+      suffixIcon: const Icon(Icons.calendar_today_outlined),
+    ),
   );
 
   Widget _numberField(
     TextEditingController controller,
     String label, {
-    bool integer = false,
+    required String unit,
+    ValueChanged<String>? onChanged,
   }) => TextField(
     controller: controller,
-    keyboardType: TextInputType.numberWithOptions(decimal: !integer),
-    inputFormatters: [
-      FilteringTextInputFormatter.allow(RegExp(integer ? r'\d' : r'[\d.]')),
-    ],
-    decoration: InputDecoration(labelText: label),
+    stylusHandwritingEnabled: false,
+    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+    textInputAction: TextInputAction.next,
+    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d.]'))],
+    onChanged: onChanged,
+    decoration: InputDecoration(
+      labelText: label,
+      hintText: '请输入',
+      suffixText: unit,
+    ),
   );
 
-  Widget _dropdown(
+  Widget _foodChoices(
     String label,
-    String value,
-    Map<String, String> values,
-    ValueChanged<String> onChanged,
-  ) => DropdownButtonFormField<String>(
-    initialValue: value,
-    decoration: InputDecoration(labelText: label),
-    items: values.entries
-        .map(
-          (entry) =>
-              DropdownMenuItem(value: entry.key, child: Text(entry.value)),
-        )
-        .toList(),
-    onChanged: (next) {
-      if (next != null) setState(() => onChanged(next));
-    },
+    Set<String> selected,
+    List<String> options,
+    TextEditingController other,
+  ) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: options
+            .map(
+              (item) => FilterChip(
+                label: Text(item),
+                selected: selected.contains(item),
+                onSelected: (_) => setState(() {
+                  if (item == '无') {
+                    selected
+                      ..clear()
+                      ..add('无');
+                    other.clear();
+                  } else {
+                    selected.remove('无');
+                    selected.contains(item)
+                        ? selected.remove(item)
+                        : selected.add(item);
+                    if (selected.isEmpty) selected.add('无');
+                  }
+                }),
+              ),
+            )
+            .toList(),
+      ),
+      if (selected.contains('其他')) ...[
+        const SizedBox(height: 12),
+        TextField(
+          controller: other,
+          stylusHandwritingEnabled: false,
+          decoration: const InputDecoration(labelText: '填写其他食物'),
+        ),
+      ],
+    ],
   );
+
+  Future<void> _pickDate(
+    TextEditingController controller, {
+    required bool birthDate,
+  }) async {
+    final now = DateTime.now();
+    final parsed = DateTime.tryParse(controller.text);
+    final first = birthDate ? DateTime(1900) : now.add(const Duration(days: 1));
+    final last = birthDate ? now : DateTime(now.year + 5, now.month, now.day);
+    final initial =
+        parsed != null && !parsed.isBefore(first) && !parsed.isAfter(last)
+        ? parsed
+        : birthDate
+        ? DateTime(now.year - 30, now.month, now.day)
+        : now.add(const Duration(days: 120));
+    final selected = await showModalBottomSheet<DateTime>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => _DateWheelPicker(
+        title: birthDate ? '选择出生日期' : '选择目标日期',
+        initialDate: initial,
+        minimumDate: first,
+        maximumDate: last,
+      ),
+    );
+    if (selected != null) setState(() => controller.text = _dateText(selected));
+  }
+
+  void _suggestTargetDate() {
+    if (_goalType != 'FAT_LOSS') return;
+    final current = double.tryParse(_weight.text);
+    final target = double.tryParse(_targetWeight.text);
+    if (current == null || target == null || target >= current) return;
+    final days = (((current - target) / 0.5) * 7).ceil().clamp(28, 730);
+    _targetDate.text = _dateText(DateTime.now().add(Duration(days: days)));
+  }
 
   Widget _riskSwitch(String title, bool value, ValueChanged<bool> onChanged) =>
       SwitchListTile(
@@ -472,4 +631,190 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
       ),
     ),
   );
+}
+
+class _DateWheelPicker extends StatefulWidget {
+  const _DateWheelPicker({
+    required this.title,
+    required this.initialDate,
+    required this.minimumDate,
+    required this.maximumDate,
+  });
+
+  final String title;
+  final DateTime initialDate;
+  final DateTime minimumDate;
+  final DateTime maximumDate;
+
+  @override
+  State<_DateWheelPicker> createState() => _DateWheelPickerState();
+}
+
+class _DateWheelPickerState extends State<_DateWheelPicker> {
+  late int _year;
+  late int _month;
+  late int _day;
+  late final FixedExtentScrollController _yearController;
+  late final FixedExtentScrollController _monthController;
+  late final FixedExtentScrollController _dayController;
+
+  List<int> get _years => [
+    for (
+      var year = widget.minimumDate.year;
+      year <= widget.maximumDate.year;
+      year++
+    )
+      year,
+  ];
+
+  List<int> get _months {
+    final first = _year == widget.minimumDate.year
+        ? widget.minimumDate.month
+        : 1;
+    final last = _year == widget.maximumDate.year
+        ? widget.maximumDate.month
+        : 12;
+    return [for (var month = first; month <= last; month++) month];
+  }
+
+  List<int> get _days {
+    final first =
+        _year == widget.minimumDate.year && _month == widget.minimumDate.month
+        ? widget.minimumDate.day
+        : 1;
+    final monthEnd = DateTime(_year, _month + 1, 0).day;
+    final last =
+        _year == widget.maximumDate.year && _month == widget.maximumDate.month
+        ? widget.maximumDate.day
+        : monthEnd;
+    return [for (var day = first; day <= last; day++) day];
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _year = widget.initialDate.year;
+    _month = widget.initialDate.month;
+    _day = widget.initialDate.day;
+    _normalize();
+    _yearController = FixedExtentScrollController(
+      initialItem: _years.indexOf(_year),
+    );
+    _monthController = FixedExtentScrollController(
+      initialItem: _months.indexOf(_month),
+    );
+    _dayController = FixedExtentScrollController(
+      initialItem: _days.indexOf(_day),
+    );
+  }
+
+  @override
+  void dispose() {
+    _yearController.dispose();
+    _monthController.dispose();
+    _dayController.dispose();
+    super.dispose();
+  }
+
+  void _normalize() {
+    final months = _months;
+    _month = _month.clamp(months.first, months.last);
+    final days = _days;
+    _day = _day.clamp(days.first, days.last);
+  }
+
+  void _syncWheels() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _monthController.jumpToItem(_months.indexOf(_month));
+      _dayController.jumpToItem(_days.indexOf(_day));
+    });
+  }
+
+  Widget _wheel(
+    List<int> values,
+    FixedExtentScrollController controller,
+    ValueChanged<int> onChanged,
+  ) => CupertinoPicker(
+    scrollController: controller,
+    itemExtent: 46,
+    useMagnifier: true,
+    magnification: 1.08,
+    onSelectedItemChanged: (index) => onChanged(values[index]),
+    children: values.map((value) => Center(child: Text('$value'))).toList(),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final months = _months;
+    final days = _days;
+    return SafeArea(
+      child: SizedBox(
+        height: 360,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('取消'),
+                  ),
+                  Expanded(
+                    child: Text(
+                      widget.title,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () =>
+                        Navigator.pop(context, DateTime(_year, _month, _day)),
+                    child: const Text('确定'),
+                  ),
+                ],
+              ),
+            ),
+            const Row(
+              children: [
+                Expanded(child: Center(child: Text('年'))),
+                Expanded(child: Center(child: Text('月'))),
+                Expanded(child: Center(child: Text('日'))),
+              ],
+            ),
+            Expanded(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _wheel(_years, _yearController, (value) {
+                      setState(() {
+                        _year = value;
+                        _normalize();
+                      });
+                      _syncWheels();
+                    }),
+                  ),
+                  Expanded(
+                    child: _wheel(months, _monthController, (value) {
+                      setState(() {
+                        _month = value;
+                        _normalize();
+                      });
+                      _syncWheels();
+                    }),
+                  ),
+                  Expanded(
+                    child: _wheel(days, _dayController, (value) {
+                      setState(() => _day = value);
+                    }),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

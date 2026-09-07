@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:go_router/go_router.dart';
 import 'package:healthy/app/router.dart';
 import 'package:healthy/app/session_controller.dart';
@@ -37,6 +38,9 @@ class _HealthyAppState extends State<HealthyApp> {
       title: '轻食记',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
+      locale: const Locale('zh', 'CN'),
+      supportedLocales: const [Locale('zh', 'CN')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
       routerConfig: _router,
     );
   }

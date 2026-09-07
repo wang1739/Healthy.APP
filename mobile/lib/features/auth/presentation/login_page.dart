@@ -113,6 +113,7 @@ class _LoginPageState extends State<LoginPage> {
                   const SizedBox(height: 18),
                   TextField(
                     controller: _phone,
+                    stylusHandwritingEnabled: false,
                     keyboardType: TextInputType.phone,
                     maxLength: 11,
                     decoration: const InputDecoration(
@@ -128,6 +129,7 @@ class _LoginPageState extends State<LoginPage> {
                         Expanded(
                           child: TextField(
                             controller: _code,
+                            stylusHandwritingEnabled: false,
                             keyboardType: TextInputType.number,
                             maxLength: 6,
                             decoration: const InputDecoration(
@@ -150,6 +152,7 @@ class _LoginPageState extends State<LoginPage> {
                   ],
                   TextField(
                     controller: _password,
+                    stylusHandwritingEnabled: false,
                     obscureText: true,
                     decoration: InputDecoration(
                       labelText: _passwordMode ? '密码' : '设置密码（可选，至少 8 位）',
