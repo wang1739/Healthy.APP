@@ -52,12 +52,12 @@ void main() {
     expect(nextLaunch.stage, AppStage.home);
   });
 
-  test('普通登录未建档时留在首页', () async {
+  test('普通登录未建档时进入健康档案', () async {
     final session = SessionController(_FakeApiClient(currentStep: 3));
 
     await session.acceptLogin(const LoginResult(profileComplete: false));
 
-    expect(session.stage, AppStage.home);
+    expect(session.stage, AppStage.profile);
     expect(session.access, UserAccess.profileIncomplete);
     expect(session.profileStep, 3);
   });

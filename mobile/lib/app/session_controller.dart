@@ -67,7 +67,7 @@ class SessionController extends ChangeNotifier {
         ? UserAccess.profileComplete
         : UserAccess.profileIncomplete;
     await _loadProfileState();
-    stage = _pendingFeature != null && access == UserAccess.profileIncomplete
+    stage = access == UserAccess.profileIncomplete
         ? AppStage.profile
         : AppStage.home;
     notifyListeners();
