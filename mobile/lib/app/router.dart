@@ -21,19 +21,24 @@ GoRouter buildRouter(SessionController session) => GoRouter(
     GoRoute(path: '/start', builder: (context, state) => const _LoadingPage()),
     GoRoute(
       path: '/login',
-      builder: (context, state) =>
-          LoginPage(api: session.api, onLoggedIn: session.acceptLogin),
+      builder: (context, state) => LoginPage(
+        api: session.api,
+        onLoggedIn: session.acceptLogin,
+        onBrowse: session.skipLogin,
+      ),
     ),
     GoRoute(
       path: '/profile',
       builder: (context, state) => ProfileWizardPage(
         api: session.api,
         onCompleted: session.completeProfile,
+        onBlocked: () => session.completeProfile(blocked: true),
+        onCancel: session.cancelFlow,
       ),
     ),
     GoRoute(
       path: '/app',
-      builder: (context, state) => AppShell(onLogout: session.logout),
+      builder: (context, state) => AppShell(session: session),
     ),
   ],
 );

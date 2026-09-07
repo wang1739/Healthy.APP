@@ -8,11 +8,13 @@ void main() {
   testWidgets('shows the Chinese login flow and consent boundary', (
     tester,
   ) async {
+    var browsed = false;
     await tester.pumpWidget(
       MaterialApp(
         home: LoginPage(
           api: ApiClient(dio: Dio()),
           onLoggedIn: (_) {},
+          onBrowse: () => browsed = true,
         ),
       ),
     );
@@ -22,5 +24,10 @@ void main() {
     expect(find.text('密码登录'), findsOneWidget);
     expect(find.textContaining('用户协议'), findsOneWidget);
     expect(find.text('登录并继续'), findsOneWidget);
+    expect(find.text('先浏览'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('先浏览'));
+    await tester.tap(find.text('先浏览'));
+    expect(browsed, isTrue);
   });
 }

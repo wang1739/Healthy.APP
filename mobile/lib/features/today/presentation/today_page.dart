@@ -5,7 +5,9 @@ import 'package:healthy/core/theme/app_colors.dart';
 import 'package:healthy/core/theme/app_spacing.dart';
 
 class TodayPage extends ConsumerWidget {
-  const TodayPage({super.key});
+  const TodayPage({required this.onProtectedAction, super.key});
+
+  final ValueChanged<String> onProtectedAction;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -64,6 +66,11 @@ class TodayPage extends ConsumerWidget {
                 ],
               ),
             ),
+          ),
+          const SizedBox(height: AppSpacing.large),
+          FilledButton(
+            onPressed: () => onProtectedAction('记录今日健康行动'),
+            child: const Text('记录今日健康行动'),
           ),
         ],
       ),

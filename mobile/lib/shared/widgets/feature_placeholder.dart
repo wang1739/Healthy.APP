@@ -6,6 +6,7 @@ class FeaturePlaceholder extends StatelessWidget {
     required this.title,
     required this.description,
     required this.icon,
+    this.example = false,
     this.child,
     super.key,
   });
@@ -13,6 +14,7 @@ class FeaturePlaceholder extends StatelessWidget {
   final String title;
   final String description;
   final IconData icon;
+  final bool example;
   final Widget? child;
 
   @override
@@ -21,7 +23,17 @@ class FeaturePlaceholder extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.all(AppSpacing.page),
         children: [
-          Text(title, style: Theme.of(context).textTheme.headlineMedium),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+              ),
+              if (example) const Chip(label: Text('示例')),
+            ],
+          ),
           const SizedBox(height: AppSpacing.small),
           Text(description),
           const SizedBox(height: AppSpacing.large),

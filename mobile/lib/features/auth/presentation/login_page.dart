@@ -3,10 +3,16 @@ import 'package:healthy/core/api/api_client.dart';
 import 'package:healthy/core/theme/app_colors.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({required this.api, required this.onLoggedIn, super.key});
+  const LoginPage({
+    required this.api,
+    required this.onLoggedIn,
+    required this.onBrowse,
+    super.key,
+  });
 
   final ApiClient api;
   final ValueChanged<LoginResult> onLoggedIn;
+  final VoidCallback onBrowse;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -178,6 +184,11 @@ class _LoginPageState extends State<LoginPage> {
                   FilledButton(
                     onPressed: _busy ? null : _login,
                     child: Text(_busy ? '请稍候…' : '登录并继续'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextButton(
+                    onPressed: _busy ? null : widget.onBrowse,
+                    child: const Text('先浏览'),
                   ),
                 ],
               ),

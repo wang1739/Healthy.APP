@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:healthy/app/session_controller.dart';
 import 'package:healthy/features/account/presentation/account_page.dart';
 import 'package:healthy/features/nutrition/presentation/nutrition_page.dart';
 import 'package:healthy/features/plan/presentation/plan_page.dart';
@@ -7,9 +8,9 @@ import 'package:healthy/features/today/presentation/today_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppShell extends StatefulWidget {
-  const AppShell({this.onLogout, super.key});
+  const AppShell({required this.session, super.key});
 
-  final Future<void> Function()? onLogout;
+  final SessionController session;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -17,12 +18,6 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   static const _pinnedKey = 'sidebar_pinned';
-  static const _pages = [
-    TodayPage(),
-    NutritionPage(),
-    PlanPage(),
-    ReportPage(),
-  ];
   static const _destinations = [
     NavigationDestination(
       icon: Icon(Icons.today_outlined),
@@ -58,7 +53,29 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
+    widget.session.addListener(_sessionChanged);
+    final pending = widget.session.consumePendingFeature();
+    if (pending != null) {
+      _index = pending.destination;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('准备完成，可以继续${pending.label}')));
+        }
+      });
+    }
     _loadPinned();
+  }
+
+  void _sessionChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    widget.session.removeListener(_sessionChanged);
+    super.dispose();
   }
 
   Future<void> _loadPinned() async {
@@ -82,16 +99,85 @@ class _AppShellState extends State<AppShell> {
     }
   }
 
+  Future<void> _requestFeature(String label, int destination) async {
+    if (widget.session.access == UserAccess.profileComplete) {
+      if (widget.session.riskBlocked && label == '生成健康计划') {
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('暂不生成普通计划'),
+            content: const Text('根据你的健康风险评估结果，请先咨询医生或注册营养师。'),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('我知道了'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('$label功能将在下一阶段接入')));
+      return;
+    }
+
+    final guest = widget.session.access == UserAccess.guest;
+    final proceed = await showModalBottomSheet<bool>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(6)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                guest ? '登录后开启个性化服务' : '完善健康档案后使用',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                guest
+                    ? '登录并完成健康档案后，轻食记才能保存数据并计算适合你的目标。'
+                    : '完成健康档案后，轻食记才能计算你的热量、饮水和运动目标。',
+              ),
+              const SizedBox(height: 20),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(guest ? '登录并继续' : '去完善'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('暂时看看'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (proceed == true) {
+      widget.session.startRestrictedFlow(
+        label: label,
+        destination: destination,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final pages = [
+      TodayPage(onProtectedAction: (label) => _requestFeature(label, 0)),
+      NutritionPage(onProtectedAction: (label) => _requestFeature(label, 1)),
+      PlanPage(onProtectedAction: (label) => _requestFeature(label, 2)),
+      ReportPage(onProtectedAction: (label) => _requestFeature(label, 3)),
+      AccountPage(session: widget.session),
+    ];
     final wide = MediaQuery.sizeOf(context).width >= 900;
-    final content = IndexedStack(
-      index: _index,
-      children: [
-        ..._pages,
-        AccountPage(onLogout: widget.onLogout),
-      ],
-    );
+    final content = IndexedStack(index: _index, children: pages);
 
     if (wide) {
       final expanded = _hovered || _pinned;

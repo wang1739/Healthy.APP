@@ -11,11 +11,15 @@ class ProfileWizardPage extends StatefulWidget {
   const ProfileWizardPage({
     required this.api,
     required this.onCompleted,
+    this.onBlocked,
+    this.onCancel,
     super.key,
   });
 
   final ApiClient api;
   final VoidCallback onCompleted;
+  final VoidCallback? onBlocked;
+  final VoidCallback? onCancel;
 
   @override
   State<ProfileWizardPage> createState() => _ProfileWizardPageState();
@@ -48,6 +52,7 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
   bool _finished = false;
   String? _error;
   String? _resultMessage;
+  bool _riskBlocked = false;
   String _sex = 'FEMALE';
   String _activity = 'LIGHT';
   String _workStyle = 'SEDENTARY';
@@ -174,6 +179,7 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
         });
         await widget.api.saveProfile({'currentStep': 7, 'completed': true});
         _resultMessage = result['message'] as String?;
+        _riskBlocked = result['riskBlocked'] == true;
     }
   }
 
@@ -202,6 +208,14 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
       appBar: AppBar(
         title: const Text('建立健康档案'),
         automaticallyImplyLeading: false,
+        actions: [
+          if (widget.onCancel != null)
+            IconButton(
+              tooltip: '暂时退出',
+              onPressed: _busy ? null : widget.onCancel,
+              icon: const Icon(Icons.close),
+            ),
+        ],
       ),
       body: SafeArea(
         child: Center(
@@ -620,8 +634,10 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: widget.onCompleted,
-                    child: const Text('进入今日计划'),
+                    onPressed: _riskBlocked
+                        ? widget.onBlocked ?? widget.onCompleted
+                        : widget.onCompleted,
+                    child: Text(_riskBlocked ? '返回首页' : '进入今日计划'),
                   ),
                 ),
               ],
