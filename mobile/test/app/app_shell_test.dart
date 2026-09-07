@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:healthy/app/app.dart';
+import 'package:healthy/app/app_shell.dart';
 import 'package:healthy/core/api/backend_status.dart';
+import 'package:healthy/core/theme/app_theme.dart';
 
 void main() {
   testWidgets('shows five destinations and switches pages', (tester) async {
@@ -13,7 +14,7 @@ void main() {
             (ref) async => BackendStatus.connected,
           ),
         ],
-        child: const HealthyApp(),
+        child: MaterialApp(theme: AppTheme.light, home: const AppShell()),
       ),
     );
     await tester.pumpAndSettle();
@@ -37,9 +38,10 @@ void main() {
             (ref) async => BackendStatus.connected,
           ),
         ],
-        child: const HealthyApp(),
+        child: MaterialApp(theme: AppTheme.light, home: const AppShell()),
       ),
     );
+    await tester.pumpAndSettle();
 
     final context = tester.element(find.byType(Card).first);
     final shape = Theme.of(context).cardTheme.shape! as RoundedRectangleBorder;

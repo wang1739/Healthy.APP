@@ -13,3 +13,5 @@ spring:
 app:
   cors:
     allowed-origins: http://localhost:4173,http://127.0.0.1:4173
+  auth:
+    expose-debug-code: true

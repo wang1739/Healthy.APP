@@ -7,7 +7,9 @@ import 'package:healthy/features/today/presentation/today_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppShell extends StatefulWidget {
-  const AppShell({super.key});
+  const AppShell({this.onLogout, super.key});
+
+  final Future<void> Function()? onLogout;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -20,7 +22,6 @@ class _AppShellState extends State<AppShell> {
     NutritionPage(),
     PlanPage(),
     ReportPage(),
-    AccountPage(),
   ];
   static const _destinations = [
     NavigationDestination(
@@ -84,7 +85,13 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 900;
-    final content = IndexedStack(index: _index, children: _pages);
+    final content = IndexedStack(
+      index: _index,
+      children: [
+        ..._pages,
+        AccountPage(onLogout: widget.onLogout),
+      ],
+    );
 
     if (wide) {
       final expanded = _hovered || _pinned;

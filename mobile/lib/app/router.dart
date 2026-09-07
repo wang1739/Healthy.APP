@@ -1,6 +1,48 @@
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:healthy/app/app_shell.dart';
+import 'package:healthy/app/session_controller.dart';
+import 'package:healthy/features/auth/presentation/login_page.dart';
+import 'package:healthy/features/profile/presentation/profile_wizard_page.dart';
 
-final appRouter = GoRouter(
-  routes: [GoRoute(path: '/', builder: (context, state) => const AppShell())],
+GoRouter buildRouter(SessionController session) => GoRouter(
+  initialLocation: '/start',
+  refreshListenable: session,
+  redirect: (context, state) {
+    final location = switch (session.stage) {
+      AppStage.loading => '/start',
+      AppStage.login => '/login',
+      AppStage.profile => '/profile',
+      AppStage.home => '/app',
+    };
+    return state.matchedLocation == location ? null : location;
+  },
+  routes: [
+    GoRoute(path: '/start', builder: (context, state) => const _LoadingPage()),
+    GoRoute(
+      path: '/login',
+      builder: (context, state) =>
+          LoginPage(api: session.api, onLoggedIn: session.acceptLogin),
+    ),
+    GoRoute(
+      path: '/profile',
+      builder: (context, state) => ProfileWizardPage(
+        api: session.api,
+        onCompleted: session.completeProfile,
+      ),
+    ),
+    GoRoute(
+      path: '/app',
+      builder: (context, state) => AppShell(onLogout: session.logout),
+    ),
+  ],
 );
+
+class _LoadingPage extends StatelessWidget {
+  const _LoadingPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+  }
+}

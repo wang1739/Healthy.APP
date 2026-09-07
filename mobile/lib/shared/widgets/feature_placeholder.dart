@@ -6,12 +6,14 @@ class FeaturePlaceholder extends StatelessWidget {
     required this.title,
     required this.description,
     required this.icon,
+    this.child,
     super.key,
   });
 
   final String title;
   final String description;
   final IconData icon;
+  final Widget? child;
 
   @override
   Widget build(BuildContext context) {
@@ -35,6 +37,10 @@ class FeaturePlaceholder extends StatelessWidget {
               ),
             ),
           ),
+          if (child != null) ...[
+            const SizedBox(height: AppSpacing.large),
+            child!,
+          ],
         ],
       ),
     );

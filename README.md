@@ -1,6 +1,6 @@
 # 轻食记 Healthy
 
-轻食记是一套面向健康生活管理的产品。目前仓库包含简版品牌官网、可交互的 Web 减脂饮食记录页、Flutter 移动端基础框架，以及 Spring Boot 后端基础框架。
+轻食记是一套面向健康生活管理的产品。目前仓库包含简版品牌官网、可交互的 Web 减脂饮食记录页、Flutter 移动端应用，以及 Spring Boot 后端。
 
 ## 当前结构
 
@@ -12,7 +12,7 @@ Healthy/
 ├─ api.js                               前端统一 API 客户端
 ├─ mobile/                             Flutter Android / iOS 应用
 ├─ backend/                             Spring Boot 4 后端
-├─ docker-compose.yml                   MySQL 8.4 本地环境
+├─ docker-compose.yml                   MySQL 8.4 与 Redis 7.4 本地环境
 ├─ scripts/check.ps1                    项目基础检查脚本
 └─ docs/superpowers/                    架构设计与实施计划
 ```
@@ -24,10 +24,10 @@ Healthy/
 环境要求：Java 17+、Docker Desktop。前端可继续使用现有的静态服务器运行在 `http://localhost:4173`。
 
 1. 复制 `.env.example` 为 `.env`，修改两个本地数据库密码。
-2. 在项目根目录启动 MySQL：
+2. 在项目根目录启动 MySQL 与 Redis：
 
    ```powershell
-   docker compose up -d mysql
+   docker compose up -d mysql redis
    ```
 
 3. 在 `backend` 目录启动 Spring Boot：
@@ -48,19 +48,22 @@ Healthy/
 .\mvnw.cmd test
 ```
 
-测试环境使用内存数据库，不依赖 Docker，覆盖应用启动、Flyway 迁移、公开接口、登录保护和前端跨域。
+测试环境使用内存数据库，不依赖 Docker，覆盖应用启动、Flyway 迁移、认证、健康档案、登录保护和前端跨域。
 
 ## 当前接口
 
-- `GET /api/v1/system/ping`：前后端联通检查，无需登录。
-- `GET /actuator/health`：服务健康检查，无需登录。
-- 其他 `/api/**` 地址默认要求登录，后续账户模块会接入正式认证。
+- 公开：`GET /api/v1/system/ping`、`GET /actuator/health`。
+- 认证：发送验证码、验证码登录、密码登录、刷新 Token、退出登录。
+- 账户：账户资料、登录设备列表、撤销指定设备。
+- 健康档案：分步保存基础资料、身体测量、生活方式、饮食偏好、目标、风险问卷和完成度。
+
+开发环境返回 `debugCode` 并由 App 自动填入；测试环境同样开启。非 `local` 环境默认关闭，生产环境不得设置 `AUTH_EXPOSE_DEBUG_CODE=true`。微信、Apple、真实短信已经预留边界，但尚未伪装成已接通。
 
 前端通过 `window.LightBiteApi` 调用后端。本机访问时默认连接 `http://localhost:8080/api/v1`，部署后默认使用同域 `/api/v1`。
 
 ## Flutter 移动端
 
-移动端当前完成第一轮基础框架：统一主题、6px 圆角、今日/饮食/计划/报告/我的五项中文导航、宽屏可固定侧边栏、页面状态保留，以及后端连通状态。业务页暂为真实开发入口，不填充虚假数据。
+移动端已完成前两轮：统一主题、6px 圆角、今日/饮食/计划/报告/我的五项中文导航、宽屏可固定侧边栏、验证码与密码登录、安全 Token 持久化、会话自动恢复，以及首次登录强制七步健康建档。风险问卷会拦截未成年人、孕哺期、进食障碍风险、严重慢性病或不安全目标，不进入普通减脂流程。
 
 环境要求：Flutter 3.47+、Android Studio、Android SDK 36。Android 模拟器默认通过 `http://10.0.2.2:8080/api/v1` 连接电脑上的后端。
 
@@ -85,6 +88,13 @@ flutter build apk --debug
 ```
 
 安装包输出到 `mobile/build/app/outputs/flutter-apk/app-debug.apk`。iOS 工程已经生成，正式编译和上架需要 macOS 与 Xcode。
+
+## 当前交付进度
+
+- 第一轮：Flutter/Android 工具链、应用骨架、中文五项导航和后端基础设施，已完成。
+- 第二轮：账户认证、设备会话、健康档案、风险拦截与七步建档，已完成。
+- 下一轮：个性计划引擎，把档案转换为饮食、饮水、运动、睡眠和每日工作计划。
+- 生产前仍需：真实短信与 Redis 会话适配、微信/Apple 登录、隐私协议正式文本、MySQL/Redis Docker 联调和安全审计。
 
 ## 一键基础检查
 

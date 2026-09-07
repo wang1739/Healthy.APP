@@ -1,0 +1,3 @@
+app:
+  auth:
+    expose-debug-code: ${AUTH_EXPOSE_DEBUG_CODE:true}
