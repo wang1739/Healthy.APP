@@ -3,3 +3,10 @@
 /.env
 /backend/target/
 /.mvn-cache/
+/mobile/.dart_tool/
+/mobile/build/
+/mobile/android/local.properties
+/mobile/android/key.properties
+/artifacts/
+*.jks
+*.keystore
