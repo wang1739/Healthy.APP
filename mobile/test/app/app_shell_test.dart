@@ -145,7 +145,7 @@ void main() {
     expect(shape.borderRadius, BorderRadius.circular(6));
   });
 
-  testWidgets('今日核心目标进入计划页且待接入操作显示中文说明', (tester) async {
+  testWidgets('今日核心目标进入计划页且记录饮食进入饮食页', (tester) async {
     session = SessionController(_TodayApi());
     session.completeProfile();
     session.consumePendingFeature();
@@ -177,7 +177,7 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     await tester.tap(action);
-    await tester.pump();
-    expect(find.text('该记录功能将在后续阶段接入'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.text('饮食记录'), findsOneWidget);
   });
 }

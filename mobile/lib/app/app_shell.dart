@@ -182,8 +182,16 @@ class _AppShellState extends State<AppShell> {
         access: widget.session.access,
         onProtectedAction: (label) => _requestFeature(label, 0),
         onOpenPlan: () => setState(() => _index = 2),
+        onOpenNutrition: () => setState(() => _index = 1),
       ),
-      NutritionPage(onProtectedAction: (label) => _requestFeature(label, 1)),
+      NutritionPage(
+        api: widget.session.api,
+        access: widget.session.access,
+        sessionKey: widget.session.sessionRevision.toString(),
+        riskBlocked: widget.session.riskBlocked,
+        onProtectedAction: (label) => _requestFeature(label, 1),
+        onOpenPlan: () => setState(() => _index = 2),
+      ),
       PlanPage(
         api: widget.session.api,
         access: widget.session.access,

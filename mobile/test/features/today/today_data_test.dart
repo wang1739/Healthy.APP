@@ -63,4 +63,22 @@ void main() {
   test('本地日期格式不附带时区或时间', () {
     expect(formatLocalDate(DateTime(2026, 9, 8, 23, 59)), '2026-09-08');
   });
+
+  test('解析真实饮食进度', () {
+    final json = response();
+    json['nutrition'] = {
+      'status': 'READY',
+      'consumedKcal': 520,
+      'targetKcal': 1470,
+      'proteinG': 32.5,
+      'carbsG': 60,
+      'fatG': 15.2,
+    };
+
+    final nutrition = TodayData.fromJson(json).nutrition;
+
+    expect(nutrition.consumedKcal, 520);
+    expect(nutrition.targetKcal, 1470);
+    expect(nutrition.proteinG, 32.5);
+  });
 }

@@ -15,6 +15,7 @@ class TodayPage extends ConsumerStatefulWidget {
     required this.access,
     required this.onProtectedAction,
     required this.onOpenPlan,
+    this.onOpenNutrition,
     this.now,
     super.key,
   });
@@ -23,6 +24,7 @@ class TodayPage extends ConsumerStatefulWidget {
   final UserAccess access;
   final ValueChanged<String> onProtectedAction;
   final VoidCallback onOpenPlan;
+  final VoidCallback? onOpenNutrition;
   final DateTime Function()? now;
 
   @override
@@ -330,7 +332,13 @@ class _TodayPageState extends ConsumerState<TodayPage>
       final cards = [
         _moduleCard(
           '饮食',
-          data.plan.targetKcal == null ? null : '${data.plan.targetKcal} kcal',
+          data.nutrition.consumedKcal == null
+              ? (data.plan.targetKcal == null
+                    ? null
+                    : '${data.plan.targetKcal} kcal')
+              : data.nutrition.targetKcal == null
+              ? '${data.nutrition.consumedKcal} kcal'
+              : '${data.nutrition.consumedKcal} / ${data.nutrition.targetKcal} kcal',
           data.plan.status == TodayModuleStatus.error
               ? TodayModuleStatus.error
               : data.nutrition.status,
@@ -502,7 +510,9 @@ class _TodayPageState extends ConsumerState<TodayPage>
   );
 
   Widget _quickButton(String label, IconData icon) => OutlinedButton.icon(
-    onPressed: () => widget.onProtectedAction(label),
+    onPressed: label == '记录饮食' && widget.onOpenNutrition != null
+        ? widget.onOpenNutrition
+        : () => widget.onProtectedAction(label),
     icon: Icon(icon),
     label: Text(label),
   );

@@ -142,16 +142,34 @@ class TodayWeightData {
 }
 
 class TodayModuleData {
-  const TodayModuleData({required this.status, this.message});
+  const TodayModuleData({
+    required this.status,
+    this.message,
+    this.consumedKcal,
+    this.targetKcal,
+    this.proteinG,
+    this.carbsG,
+    this.fatG,
+  });
 
   factory TodayModuleData.fromJson(Map<String, dynamic> json) =>
       TodayModuleData(
         status: _status(json['status']),
         message: json['message']?.toString(),
+        consumedKcal: (json['consumedKcal'] as num?)?.toInt(),
+        targetKcal: (json['targetKcal'] as num?)?.toInt(),
+        proteinG: (json['proteinG'] as num?)?.toDouble(),
+        carbsG: (json['carbsG'] as num?)?.toDouble(),
+        fatG: (json['fatG'] as num?)?.toDouble(),
       );
 
   final TodayModuleStatus status;
   final String? message;
+  final int? consumedKcal;
+  final int? targetKcal;
+  final double? proteinG;
+  final double? carbsG;
+  final double? fatG;
 }
 
 class TodayNextAction {
