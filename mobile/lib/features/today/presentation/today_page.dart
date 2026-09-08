@@ -15,6 +15,7 @@ class TodayPage extends ConsumerStatefulWidget {
     required this.access,
     required this.onProtectedAction,
     required this.onOpenPlan,
+    this.now,
     super.key,
   });
 
@@ -22,6 +23,7 @@ class TodayPage extends ConsumerStatefulWidget {
   final UserAccess access;
   final ValueChanged<String> onProtectedAction;
   final VoidCallback onOpenPlan;
+  final DateTime Function()? now;
 
   @override
   ConsumerState<TodayPage> createState() => _TodayPageState();
@@ -57,7 +59,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
   }
 
   DateTime _today() {
-    final now = DateTime.now();
+    final now = widget.now?.call() ?? DateTime.now();
     return DateTime(now.year, now.month, now.day);
   }
 
@@ -126,7 +128,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
   );
 
   String _greeting() {
-    final hour = DateTime.now().hour;
+    final hour = (widget.now?.call() ?? DateTime.now()).hour;
     if (hour < 11) return '早上好';
     if (hour < 18) return '下午好';
     return '晚上好';

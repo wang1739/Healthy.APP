@@ -79,6 +79,7 @@ Future<void> _pumpPage(
   ProviderContainer? container,
   double width = 800,
   double textScale = 1,
+  DateTime Function()? now,
 }) async {
   await tester.binding.setSurfaceSize(Size(width, 900));
   final app = MaterialApp(
@@ -95,6 +96,7 @@ Future<void> _pumpPage(
           access: access,
           onOpenPlan: onOpenPlan ?? () {},
           onProtectedAction: onProtectedAction ?? (_) {},
+          now: now,
         ),
       ),
     ),
@@ -236,6 +238,50 @@ void main() {
     await _pumpPage(tester, api, UserAccess.profileComplete);
     expect(find.text('网络连接失败，请稍后重试'), findsOneWidget);
     expect(find.text('重新加载'), findsOneWidget);
+  });
+
+  testWidgets('账户切换后请求失败也不显示上一账户的缓存', (tester) async {
+    final api = _FakeApi(overview());
+    final container = ProviderContainer();
+    await _pumpPage(
+      tester,
+      api,
+      UserAccess.profileComplete,
+      container: container,
+    );
+    expect(find.text('1470 kcal'), findsWidgets);
+
+    await _pumpPage(tester, api, UserAccess.guest, container: container);
+    api.fail = true;
+    await _pumpPage(
+      tester,
+      api,
+      UserAccess.profileComplete,
+      container: container,
+    );
+
+    expect(find.text('1470 kcal'), findsNothing);
+    expect(find.text('网络连接失败，请稍后重试'), findsOneWidget);
+    container.dispose();
+  });
+
+  testWidgets('后台恢复仅在设备本地日期变化后刷新', (tester) async {
+    var now = DateTime(2026, 9, 8, 10);
+    final api = _FakeApi(overview());
+    await _pumpPage(tester, api, UserAccess.profileComplete, now: () => now);
+    expect(api.todayCalls, 1);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+    expect(api.todayCalls, 1);
+
+    now = DateTime(2026, 9, 9, 8);
+    api.json = {...api.json, 'date': '2026-09-09'};
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+
+    expect(api.todayCalls, 2);
+    expect(find.textContaining('9月9日'), findsOneWidget);
   });
 
   testWidgets('窄屏和大字体仍可访问所有核心区域', (tester) async {

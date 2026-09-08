@@ -25,6 +25,7 @@ class TodayController extends ChangeNotifier {
   final ApiClient api;
   TodayViewState state = const TodayViewState();
   Future<void>? _loading;
+  bool _disposed = false;
 
   Future<void> load(DateTime date) {
     final active = _loading;
@@ -58,8 +59,10 @@ class TodayController extends ChangeNotifier {
     notifyListeners();
     try {
       final data = await api.getToday(date);
+      if (_disposed) return;
       state = TodayViewState(data: data, requestedDate: date);
     } catch (error) {
+      if (_disposed) return;
       final cached = state.data;
       state = TodayViewState(
         data: cached,
@@ -71,6 +74,12 @@ class TodayController extends ChangeNotifier {
       );
     }
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }
 

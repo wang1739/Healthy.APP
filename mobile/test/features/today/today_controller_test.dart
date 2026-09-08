@@ -113,6 +113,17 @@ void main() {
     expect(controller.state.data?.date, DateTime(2026, 9, 9));
   });
 
+  test('控制器销毁后丢弃在途响应', () async {
+    final api = _FakeApi()..pending = Completer<TodayData>();
+    final controller = TodayController(api);
+    final operation = controller.load(DateTime(2026, 9, 8));
+
+    controller.dispose();
+    api.pending!.complete(data(DateTime(2026, 9, 8)));
+
+    await expectLater(operation, completes);
+  });
+
   test('页面离开后释放缓存，避免换号复用前一用户数据', () async {
     final api = _FakeApi();
     final container = ProviderContainer();
