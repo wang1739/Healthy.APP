@@ -1,0 +1,111 @@
+package com.lightbite.healthy.today;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import com.lightbite.healthy.plan.PlanDtos;
+import com.lightbite.healthy.plan.PlanService;
+import com.lightbite.healthy.profile.ProfileDtos;
+import com.lightbite.healthy.profile.ProfileService;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+class TodayServiceTests {
+
+    private static final String USER_ID = "today-user";
+    private final PlanService plans = mock(PlanService.class);
+    private final ProfileService profiles = mock(ProfileService.class);
+    private TodayService service;
+
+    @BeforeEach
+    void setUp() {
+        service = new TodayService(plans, profiles);
+        when(profiles.completeness(USER_ID)).thenReturn(completeness(true, false));
+        when(profiles.measurements(USER_ID)).thenReturn(List.of());
+        when(plans.current(USER_ID)).thenReturn(current("EMPTY", null));
+    }
+
+    @Test
+    void mapsActivePlanAndLatestWeightWithoutRecalculatingTargets() {
+        Instant measuredAt = Instant.parse("2026-09-07T08:30:00Z");
+        when(plans.current(USER_ID)).thenReturn(current("ACTIVE", result()));
+        when(profiles.measurements(USER_ID)).thenReturn(List.of(
+                new ProfileDtos.MeasurementResponse("latest", new BigDecimal("62.5"), null, null, measuredAt),
+                new ProfileDtos.MeasurementResponse("older", new BigDecimal("63.0"), null, null, measuredAt.minusSeconds(60))));
+
+        TodayDtos.TodayResponse response = service.get(USER_ID, LocalDate.of(2026, 9, 8));
+
+        assertThat(response.plan().status()).isEqualTo(TodayDtos.ModuleStatus.READY);
+        assertThat(response.plan().state()).isEqualTo("ACTIVE");
+        assertThat(response.plan().targetKcal()).isEqualTo(1470);
+        assertThat(response.plan().proteinG()).isEqualTo(110);
+        assertThat(response.plan().waterMl()).isEqualTo(1900);
+        assertThat(response.weight().valueKg()).isEqualByComparingTo("62.5");
+        assertThat(response.weight().measuredAt()).isEqualTo(measuredAt);
+        assertThat(response.nextAction().type()).isEqualTo("VIEW_PLAN");
+    }
+
+    @Test
+    void returnsIndependentErrorsWhenOneSourceFails() {
+        when(plans.current(USER_ID)).thenThrow(new IllegalStateException("database detail"));
+        when(profiles.measurements(USER_ID)).thenReturn(List.of(
+                new ProfileDtos.MeasurementResponse("weight", new BigDecimal("61.2"), null, null, Instant.now())));
+
+        TodayDtos.TodayResponse response = service.get(USER_ID, LocalDate.now());
+
+        assertThat(response.plan().status()).isEqualTo(TodayDtos.ModuleStatus.ERROR);
+        assertThat(response.plan().message()).doesNotContain("database detail");
+        assertThat(response.weight().status()).isEqualTo(TodayDtos.ModuleStatus.READY);
+    }
+
+    @Test
+    void marksFutureRecordModulesAsComingSoon() {
+        TodayDtos.TodayResponse response = service.get(USER_ID, LocalDate.now());
+
+        assertThat(response.nutrition().status()).isEqualTo(TodayDtos.ModuleStatus.COMING_SOON);
+        assertThat(response.hydration().status()).isEqualTo(TodayDtos.ModuleStatus.COMING_SOON);
+        assertThat(response.activity().status()).isEqualTo(TodayDtos.ModuleStatus.COMING_SOON);
+        assertThat(response.sleep().status()).isEqualTo(TodayDtos.ModuleStatus.COMING_SOON);
+        assertThat(response.tasks().status()).isEqualTo(TodayDtos.ModuleStatus.COMING_SOON);
+    }
+
+    @Test
+    void choosesNextActionFromProfileAndPlanState() {
+        when(profiles.completeness(USER_ID)).thenReturn(completeness(false, false));
+        assertThat(service.get(USER_ID, LocalDate.now()).nextAction().type()).isEqualTo("COMPLETE_PROFILE");
+
+        when(profiles.completeness(USER_ID)).thenReturn(completeness(true, true));
+        assertThat(service.get(USER_ID, LocalDate.now()).nextAction().type()).isEqualTo("VIEW_RISK_GUIDANCE");
+
+        when(profiles.completeness(USER_ID)).thenReturn(completeness(true, false));
+        when(plans.current(USER_ID)).thenReturn(current("PAUSED", result()));
+        assertThat(service.get(USER_ID, LocalDate.now()).nextAction().type()).isEqualTo("RESUME_PLAN");
+
+        when(plans.current(USER_ID)).thenReturn(current("EMPTY", null));
+        assertThat(service.get(USER_ID, LocalDate.now()).nextAction().type()).isEqualTo("CREATE_PLAN");
+    }
+
+    private ProfileDtos.CompletenessResponse completeness(boolean complete, boolean blocked) {
+        return new ProfileDtos.CompletenessResponse(
+                complete ? 7 : 2, complete ? 100 : 28, complete, blocked, false,
+                false, "FEMALE", "FEMALE", LocalDate.of(1995, 6, 18));
+    }
+
+    private PlanDtos.CurrentResponse current(String state, PlanDtos.PlanResultResponse result) {
+        return new PlanDtos.CurrentResponse(
+                state, result == null ? null : "plan-1", result == null ? null : 1,
+                result == null ? null : 1, null, null, null, false, result);
+    }
+
+    private PlanDtos.PlanResultResponse result() {
+        return new PlanDtos.PlanResultResponse(
+                "FAT_LOSS_V1", true, new BigDecimal("22.96"), 1320, 1815,
+                1470, 110, 155, 45, 1900, 4, 35, new BigDecimal("8.0"),
+                new BigDecimal("-0.3"), LocalDate.of(2027, 3, 1), "请根据身体感受调整");
+    }
+}

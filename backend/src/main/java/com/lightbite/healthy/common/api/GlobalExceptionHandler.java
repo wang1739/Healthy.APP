@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
@@ -40,6 +41,21 @@ public class GlobalExceptionHandler {
                 "VALIDATION_FAILED",
                 "提交的数据不符合要求",
                 fieldErrors,
+                Instant.now(),
+                request.getRequestURI()
+        );
+        return ResponseEntity.badRequest().body(error);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiError> handleTypeMismatch(
+            MethodArgumentTypeMismatchException exception,
+            HttpServletRequest request
+    ) {
+        ApiError error = new ApiError(
+                "VALIDATION_FAILED",
+                "请求参数格式不正确",
+                List.of(new ApiFieldError(exception.getName(), "格式不正确")),
                 Instant.now(),
                 request.getRequestURI()
         );
