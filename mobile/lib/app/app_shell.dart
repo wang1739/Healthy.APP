@@ -119,8 +119,13 @@ class _AppShellState extends State<AppShell> {
         );
         return;
       }
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('$label功能将在下一阶段接入')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            label.startsWith('记录') ? '该记录功能将在后续阶段接入' : '$label功能将在下一阶段接入',
+          ),
+        ),
+      );
       return;
     }
 

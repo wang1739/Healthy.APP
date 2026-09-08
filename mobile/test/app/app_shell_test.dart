@@ -6,7 +6,38 @@ import 'package:healthy/app/session_controller.dart';
 import 'package:healthy/core/api/api_client.dart';
 import 'package:healthy/core/api/backend_status.dart';
 import 'package:healthy/core/theme/app_theme.dart';
+import 'package:healthy/features/today/domain/today_data.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+class _TodayApi extends ApiClient {
+  @override
+  Future<TodayData> getToday(DateTime date) async => TodayData.fromJson({
+    'date': formatLocalDate(date),
+    'plan': {
+      'status': 'READY',
+      'state': 'ACTIVE',
+      'currentWeek': 2,
+      'targetKcal': 1470,
+      'proteinG': 110,
+      'carbsG': 155,
+      'fatG': 45,
+      'waterMl': 1900,
+      'exerciseDays': 4,
+      'exerciseMinutes': 150,
+      'sleepHours': 8,
+    },
+    'weight': {'status': 'EMPTY'},
+    'nutrition': {'status': 'COMING_SOON'},
+    'hydration': {'status': 'COMING_SOON'},
+    'activity': {'status': 'COMING_SOON'},
+    'sleep': {'status': 'COMING_SOON'},
+    'tasks': {'status': 'COMING_SOON'},
+    'nextAction': {'type': 'VIEW_PLAN', 'title': '查看今日目标'},
+  });
+
+  @override
+  Future<Map<String, dynamic>> getCurrentPlan() async => {'state': 'EMPTY'};
+}
 
 void main() {
   late SessionController session;
@@ -112,5 +143,41 @@ void main() {
     final context = tester.element(find.byType(Card).first);
     final shape = Theme.of(context).cardTheme.shape! as RoundedRectangleBorder;
     expect(shape.borderRadius, BorderRadius.circular(6));
+  });
+
+  testWidgets('今日核心目标进入计划页且待接入操作显示中文说明', (tester) async {
+    session = SessionController(_TodayApi());
+    session.completeProfile();
+    session.consumePendingFeature();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          backendStatusProvider.overrideWith(
+            (ref) async => BackendStatus.connected,
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: AppShell(session: session),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.bySemanticsLabel('今日核心目标，点击查看计划'));
+    await tester.pumpAndSettle();
+    expect(find.text('减脂计划'), findsOneWidget);
+
+    await tester.tap(find.text('今日'));
+    await tester.pumpAndSettle();
+    final action = find.text('记录饮食');
+    await tester.scrollUntilVisible(
+      action,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(action);
+    await tester.pump();
+    expect(find.text('该记录功能将在后续阶段接入'), findsOneWidget);
   });
 }
