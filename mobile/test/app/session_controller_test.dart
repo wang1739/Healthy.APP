@@ -91,4 +91,13 @@ void main() {
     expect(session.stage, AppStage.home);
     expect(session.access, UserAccess.guest);
   });
+
+  test('直接完成健康档案后进入计划预览', () {
+    final session = SessionController(_FakeApiClient());
+
+    session.completeProfile();
+
+    expect(session.pendingFeature?.destination, 2);
+    expect(session.pendingFeature?.label, '查看减脂方案');
+  });
 }

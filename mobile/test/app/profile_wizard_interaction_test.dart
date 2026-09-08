@@ -9,12 +9,18 @@ class _FakeApiClient extends ApiClient {
   _FakeApiClient({this.step = 0}) : super(dio: Dio());
 
   final int step;
+  final savedProfiles = <Map<String, dynamic>>[];
 
   @override
   Future<Map<String, dynamic>> profileCompleteness() async => {
     'complete': false,
     'currentStep': step,
   };
+
+  @override
+  Future<void> saveProfile(Map<String, dynamic> data) async {
+    savedProfiles.add(data);
+  }
 }
 
 void main() {
@@ -55,6 +61,29 @@ void main() {
     expect(find.text('男'), findsOneWidget);
     expect(find.text('其他'), findsOneWidget);
     expect(find.byType(DropdownButtonFormField<String>), findsNothing);
+  });
+
+  testWidgets('性别为其他时必须选择代谢计算依据', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh', 'CN'),
+        supportedLocales: const [Locale('zh', 'CN')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        home: ProfileWizardPage(api: _FakeApiClient(), onCompleted: () {}),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('其他'));
+    await tester.pump();
+
+    expect(find.text('代谢计算依据'), findsOneWidget);
+    expect(find.text('男性公式'), findsOneWidget);
+    expect(find.text('女性公式'), findsOneWidget);
+
+    await tester.tap(find.text('保存并继续'));
+    await tester.pump();
+    expect(find.text('请选择代谢计算依据'), findsOneWidget);
   });
 
   testWidgets('身体数值使用数字键盘手动填写', (tester) async {

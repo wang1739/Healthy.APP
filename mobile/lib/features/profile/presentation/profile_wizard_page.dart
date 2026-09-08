@@ -54,6 +54,7 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
   String? _resultMessage;
   bool _riskBlocked = false;
   String _sex = 'FEMALE';
+  String? _metabolicBasis;
   String _activity = 'LIGHT';
   String _workStyle = 'SEDENTARY';
   String _dietType = 'BALANCED';
@@ -128,9 +129,13 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
   Future<void> _saveStep() async {
     switch (_step) {
       case 0:
+        if (_sex == 'OTHER' && _metabolicBasis == null) {
+          throw const FormatException('请选择代谢计算依据');
+        }
         await widget.api.saveProfile({
           'birthDate': _required(_birthDate, '请输入出生日期'),
           'sex': _sex,
+          'metabolicBasis': _sex == 'OTHER' ? _metabolicBasis : _sex,
           'currentStep': 1,
         });
       case 1:
@@ -308,11 +313,27 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
       children: [
         _dateField(_birthDate, '出生日期', birthDate: true),
         const SizedBox(height: 18),
-        _choices('性别', _sex, const {
-          'FEMALE': '女',
-          'MALE': '男',
-          'OTHER': '其他',
-        }, (value) => _sex = value),
+        _choices(
+          '性别',
+          _sex,
+          const {'FEMALE': '女', 'MALE': '男', 'OTHER': '其他'},
+          (value) {
+            _sex = value;
+            if (value != 'OTHER') _metabolicBasis = null;
+          },
+        ),
+        if (_sex == 'OTHER') ...[
+          const SizedBox(height: 18),
+          _choices('代谢计算依据', _metabolicBasis ?? '', const {
+            'MALE': '男性公式',
+            'FEMALE': '女性公式',
+          }, (value) => _metabolicBasis = value),
+          const SizedBox(height: 8),
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Text('仅用于估算能量，不会改变你的性别显示。'),
+          ),
+        ],
       ],
     ),
     1 => Column(
@@ -637,7 +658,7 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
                     onPressed: _riskBlocked
                         ? widget.onBlocked ?? widget.onCompleted
                         : widget.onCompleted,
-                    child: Text(_riskBlocked ? '返回首页' : '进入今日计划'),
+                    child: Text(_riskBlocked ? '返回首页' : '查看减脂方案'),
                   ),
                 ),
               ],

@@ -1,18 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:healthy/core/api/backend_status.dart';
+import 'package:healthy/core/api/api_client.dart';
 import 'package:healthy/core/theme/app_colors.dart';
 import 'package:healthy/core/theme/app_spacing.dart';
+import 'package:healthy/features/plan/application/plan_controller.dart';
+import 'package:healthy/app/session_controller.dart';
 
 class TodayPage extends ConsumerWidget {
-  const TodayPage({required this.onProtectedAction, super.key});
+  const TodayPage({
+    required this.api,
+    required this.access,
+    required this.onProtectedAction,
+    required this.onOpenPlan,
+    super.key,
+  });
 
+  final ApiClient api;
+  final UserAccess access;
   final ValueChanged<String> onProtectedAction;
+  final VoidCallback onOpenPlan;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final status = ref.watch(backendStatusProvider);
     final connected = status.value == BackendStatus.connected;
+    final plan = access == UserAccess.profileComplete
+        ? ref.watch(planControllerProvider(api)).state.data
+        : null;
 
     return SafeArea(
       child: ListView(
@@ -68,6 +83,39 @@ class TodayPage extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.large),
+          if (plan != null && plan.kind == PlanKind.active) ...[
+            Card(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(6),
+                onTap: onOpenPlan,
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.medium),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.route_outlined, color: AppColors.green),
+                      const SizedBox(width: AppSpacing.medium),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '当前减脂计划',
+                              style: TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            Text(
+                              '每日 ${plan.targetKcal} kcal · 第 ${plan.currentWeek} 周',
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.large),
+          ],
           FilledButton(
             onPressed: () => onProtectedAction('记录今日健康行动'),
             child: const Text('记录今日健康行动'),
