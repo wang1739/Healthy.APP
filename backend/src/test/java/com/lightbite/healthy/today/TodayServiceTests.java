@@ -64,6 +64,18 @@ class TodayServiceTests {
     }
 
     @Test
+    void keepsPlanWhenWeightSourceFails() {
+        when(plans.current(USER_ID)).thenReturn(current("ACTIVE", result()));
+        when(profiles.measurements(USER_ID)).thenThrow(new IllegalStateException("measurement detail"));
+
+        TodayDtos.TodayResponse response = service.get(USER_ID, LocalDate.now());
+
+        assertThat(response.plan().status()).isEqualTo(TodayDtos.ModuleStatus.READY);
+        assertThat(response.weight().status()).isEqualTo(TodayDtos.ModuleStatus.ERROR);
+        assertThat(response.weight().message()).doesNotContain("measurement detail");
+    }
+
+    @Test
     void marksFutureRecordModulesAsComingSoon() {
         TodayDtos.TodayResponse response = service.get(USER_ID, LocalDate.now());
 
@@ -80,7 +92,13 @@ class TodayServiceTests {
         assertThat(service.get(USER_ID, LocalDate.now()).nextAction().type()).isEqualTo("COMPLETE_PROFILE");
 
         when(profiles.completeness(USER_ID)).thenReturn(completeness(true, true));
-        assertThat(service.get(USER_ID, LocalDate.now()).nextAction().type()).isEqualTo("VIEW_RISK_GUIDANCE");
+        TodayDtos.TodayResponse blocked = service.get(USER_ID, LocalDate.now());
+        assertThat(blocked.nextAction().type()).isEqualTo("VIEW_RISK_GUIDANCE");
+
+        when(plans.current(USER_ID)).thenReturn(current("RISK_BLOCKED", null));
+        blocked = service.get(USER_ID, LocalDate.now());
+        assertThat(blocked.plan().targetKcal()).isNull();
+        assertThat(blocked.nextAction().type()).isEqualTo("VIEW_RISK_GUIDANCE");
 
         when(profiles.completeness(USER_ID)).thenReturn(completeness(true, false));
         when(plans.current(USER_ID)).thenReturn(current("PAUSED", result()));
