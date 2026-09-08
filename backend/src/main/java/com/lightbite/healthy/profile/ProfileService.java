@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProfileService {
 
     private static final Set<String> SEXES = Set.of("FEMALE", "MALE", "OTHER");
+    private static final Set<String> METABOLIC_BASES = Set.of("FEMALE", "MALE");
     private static final Set<String> ACTIVITY_LEVELS = Set.of("LOW", "LIGHT", "MODERATE", "HIGH");
     private static final Set<String> WORK_STYLES = Set.of("SEDENTARY", "MIXED", "ACTIVE");
     private static final Set<String> GOAL_TYPES = Set.of("FAT_LOSS", "MUSCLE_GAIN", "MAINTAIN", "BETTER_DIET");
@@ -36,10 +37,16 @@ public class ProfileService {
     @Transactional
     public ProfileDtos.CompletenessResponse saveProfile(String userId, ProfileDtos.ProfileRequest request) {
         ensureProfile(userId);
+        Map<String, Object> existing = jdbc.queryForMap("SELECT * FROM health_profiles WHERE user_id = ?", userId);
+        String effectiveSex = request.sex() != null ? request.sex() : (String) existing.get("sex");
         boolean wasComplete = Boolean.TRUE.equals(jdbc.queryForObject(
                 "SELECT completed FROM health_profiles WHERE user_id = ?", Boolean.class, userId));
-        boolean keyDataChanged = request.heightCm() != null || request.activityLevel() != null
-                || request.goalType() != null || request.targetWeightKg() != null;
+        boolean keyDataChanged = changedDate(existing.get("birth_date"), request.birthDate())
+                || changed(existing.get("sex"), request.sex())
+                || changedNumber(existing.get("height_cm"), request.heightCm())
+                || changed(existing.get("activity_level"), request.activityLevel())
+                || ("OTHER".equals(effectiveSex)
+                && changed(existing.get("metabolic_basis"), request.metabolicBasis()));
 
         if (request.birthDate() != null) {
             if (request.birthDate().isAfter(LocalDate.now()) || request.birthDate().isBefore(LocalDate.now().minusYears(120))) {
@@ -49,7 +56,17 @@ public class ProfileService {
         }
         if (request.sex() != null) {
             requireEnum(request.sex(), SEXES, "sex");
-            jdbc.update("UPDATE health_profiles SET sex = ? WHERE user_id = ?", request.sex(), userId);
+            String automaticBasis = "OTHER".equals(request.sex()) ? request.metabolicBasis() : request.sex();
+            jdbc.update("UPDATE health_profiles SET sex = ?, metabolic_basis = ? WHERE user_id = ?",
+                    request.sex(), automaticBasis, userId);
+        }
+        if (request.metabolicBasis() != null) {
+            requireEnum(request.metabolicBasis(), METABOLIC_BASES, "metabolicBasis");
+            String sex = request.sex() != null ? request.sex() : (String) existing.get("sex");
+            if ("OTHER".equals(sex)) {
+                jdbc.update("UPDATE health_profiles SET metabolic_basis = ? WHERE user_id = ?",
+                        request.metabolicBasis(), userId);
+            }
         }
         if (request.heightCm() != null) {
             jdbc.update("UPDATE health_profiles SET height_cm = ? WHERE user_id = ?", request.heightCm(), userId);
@@ -68,16 +85,34 @@ public class ProfileService {
         if (request.exerciseDays() != null) {
             jdbc.update("UPDATE health_profiles SET exercise_days = ? WHERE user_id = ?", request.exerciseDays(), userId);
         }
-        if (request.goalType() != null) {
-            requireEnum(request.goalType(), GOAL_TYPES, "goalType");
-            if (request.targetDate() != null && !request.targetDate().isAfter(LocalDate.now())) {
+        if (request.goalType() != null || request.targetWeightKg() != null || request.targetDate() != null) {
+            Map<String, Object> currentGoal;
+            try {
+                currentGoal = jdbc.queryForMap("SELECT * FROM health_goals WHERE user_id = ?", userId);
+            } catch (EmptyResultDataAccessException exception) {
+                currentGoal = Map.of();
+            }
+            String goalType = request.goalType() != null
+                    ? request.goalType() : (String) currentGoal.get("goal_type");
+            BigDecimal targetWeight = request.targetWeightKg() != null
+                    ? request.targetWeightKg() : (BigDecimal) currentGoal.get("target_weight_kg");
+            LocalDate targetDate = request.targetDate() != null
+                    ? request.targetDate() : toLocalDate(currentGoal.get("target_date"));
+            if (goalType == null) {
+                throw invalid("goalType", "请选择健康目标");
+            }
+            requireEnum(goalType, GOAL_TYPES, "goalType");
+            if (targetDate != null && !targetDate.isAfter(LocalDate.now())) {
                 throw invalid("targetDate", "目标日期必须晚于今天");
             }
+            keyDataChanged = !goalType.equals(currentGoal.get("goal_type"))
+                    || changedNumber(currentGoal.get("target_weight_kg"), request.targetWeightKg())
+                    || changedDate(currentGoal.get("target_date"), request.targetDate()) || keyDataChanged;
             jdbc.update("DELETE FROM health_goals WHERE user_id = ?", userId);
             jdbc.update("""
                     INSERT INTO health_goals (user_id, goal_type, target_weight_kg, target_date)
                     VALUES (?, ?, ?, ?)
-                    """, userId, request.goalType(), request.targetWeightKg(), request.targetDate());
+                    """, userId, goalType, targetWeight, targetDate);
         }
         if (request.currentStep() != null) {
             jdbc.update("UPDATE health_profiles SET current_step = ? WHERE user_id = ?", request.currentStep(), userId);
@@ -104,6 +139,8 @@ public class ProfileService {
             throw invalid("weightKg", "请输入体重");
         }
         ensureProfile(userId);
+        boolean wasComplete = Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT completed FROM health_profiles WHERE user_id = ?", Boolean.class, userId));
         String id = UUID.randomUUID().toString();
         Instant now = Instant.now();
         jdbc.update("""
@@ -112,6 +149,13 @@ public class ProfileService {
                 VALUES (?, ?, ?, ?, ?, ?)
                 """, id, userId, request.weightKg(), request.waistCm(), request.bodyFatPercent(), Timestamp.from(now));
         jdbc.update("UPDATE health_profiles SET current_step = CASE WHEN current_step < 2 THEN 2 ELSE current_step END WHERE user_id = ?", userId);
+        if (wasComplete) {
+            jdbc.update("""
+                    UPDATE health_profiles
+                    SET plan_needs_recalculation = TRUE, version = version + 1, updated_at = ?
+                    WHERE user_id = ?
+                    """, Timestamp.from(Instant.now()), userId);
+        }
         return new ProfileDtos.MeasurementResponse(
                 id, request.weightKg(), request.waistCm(), request.bodyFatPercent(), now);
     }
@@ -139,6 +183,8 @@ public class ProfileService {
     @Transactional
     public ProfileDtos.RiskResponse saveRisk(String userId, ProfileDtos.RiskRequest request) {
         ensureProfile(userId);
+        Map<String, Object> profile = jdbc.queryForMap(
+                "SELECT completed, risk_blocked FROM health_profiles WHERE user_id = ?", userId);
         LocalDate birthDate = jdbc.queryForObject(
                 "SELECT birth_date FROM health_profiles WHERE user_id = ?", LocalDate.class, userId);
         boolean minor = birthDate != null && Period.between(birthDate, LocalDate.now()).getYears() < 18;
@@ -152,6 +198,14 @@ public class ProfileService {
                 """, UUID.randomUUID().toString(), userId, request.pregnant(), request.breastfeeding(),
                 request.eatingDisorderRisk(), request.seriousChronicDisease(), request.unsafeTarget(), blocked);
         jdbc.update("UPDATE health_profiles SET risk_blocked = ?, current_step = 6 WHERE user_id = ?", blocked, userId);
+        if (Boolean.TRUE.equals(profile.get("completed"))
+                && blocked != Boolean.TRUE.equals(profile.get("risk_blocked"))) {
+            jdbc.update("""
+                    UPDATE health_profiles
+                    SET plan_needs_recalculation = TRUE, version = version + 1, updated_at = ?
+                    WHERE user_id = ?
+                    """, Timestamp.from(Instant.now()), userId);
+        }
         return new ProfileDtos.RiskResponse(
                 blocked,
                 blocked ? "当前情况不适合自动生成普通减脂计划，请咨询医生或注册营养师" : "未发现自动计划拦截项"
@@ -161,11 +215,12 @@ public class ProfileService {
     public ProfileDtos.CompletenessResponse completeness(String userId) {
         ensureProfile(userId);
         Map<String, Object> profile = jdbc.queryForMap("""
-                SELECT current_step, completed, risk_blocked, plan_needs_recalculation
+                SELECT current_step, completed, metabolic_basis, risk_blocked, plan_needs_recalculation
                 FROM health_profiles WHERE user_id = ?
                 """, userId);
         int step = ((Number) profile.get("current_step")).intValue();
-        boolean complete = Boolean.TRUE.equals(profile.get("completed"));
+        boolean complete = Boolean.TRUE.equals(profile.get("completed"))
+                && profile.get("metabolic_basis") != null;
         return new ProfileDtos.CompletenessResponse(
                 step,
                 complete ? 100 : Math.min(99, step * 100 / 7),
@@ -193,7 +248,7 @@ public class ProfileService {
                 SELECT COUNT(*) FROM health_profiles
                 WHERE user_id = ? AND birth_date IS NOT NULL AND sex IS NOT NULL
                   AND height_cm IS NOT NULL AND activity_level IS NOT NULL AND work_style IS NOT NULL
-                  AND sleep_hours IS NOT NULL AND exercise_days IS NOT NULL
+                  AND sleep_hours IS NOT NULL AND exercise_days IS NOT NULL AND metabolic_basis IS NOT NULL
                 """, Integer.class, userId);
         Integer measurements = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM body_measurements WHERE user_id = ?", Integer.class, userId);
@@ -224,6 +279,25 @@ public class ProfileService {
         if (!values.contains(value)) {
             throw invalid(field, "选项不受支持");
         }
+    }
+
+    private boolean changed(Object current, Object requested) {
+        return requested != null && !requested.equals(current);
+    }
+
+    private boolean changedNumber(Object current, BigDecimal requested) {
+        return requested != null && (current == null || ((BigDecimal) current).compareTo(requested) != 0);
+    }
+
+    private boolean changedDate(Object current, LocalDate requested) {
+        return requested != null && !requested.equals(toLocalDate(current));
+    }
+
+    private LocalDate toLocalDate(Object value) {
+        if (value == null) {
+            return null;
+        }
+        return value instanceof LocalDate date ? date : ((java.sql.Date) value).toLocalDate();
     }
 
     private ApiException invalid(String field, String message) {
