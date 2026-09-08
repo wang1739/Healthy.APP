@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:healthy/core/api/api_config.dart';
 import 'package:healthy/core/storage/token_store.dart';
+import 'package:healthy/features/nutrition/domain/nutrition_data.dart';
 import 'package:healthy/features/today/domain/today_data.dart';
 
 class ApiClient {
@@ -116,6 +117,77 @@ class ApiClient {
     return TodayData.fromJson(Map<String, dynamic>.from(response.data as Map));
   }
 
+  Future<List<Food>> searchFoods({
+    String query = '',
+    String scope = 'ALL',
+    int limit = 20,
+  }) async {
+    final response = await _authorized(
+      'GET',
+      '/foods',
+      queryParameters: {'query': query, 'scope': scope, 'limit': limit},
+    );
+    final data = response.data;
+    final items = data is List ? data : (data as Map?)?['items'] as List? ?? [];
+    return items
+        .map((item) => Food.fromJson(Map<String, dynamic>.from(item as Map)))
+        .toList();
+  }
+
+  Future<FoodSuggestions> getFoodSuggestions({int limit = 8}) async {
+    final response = await _authorized(
+      'GET',
+      '/foods/suggestions',
+      queryParameters: {'limit': limit},
+    );
+    return FoodSuggestions.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<Food> createCustomFood(Map<String, dynamic> data) async {
+    final response = await _authorized('POST', '/foods/custom', data: data);
+    return Food.fromJson(Map<String, dynamic>.from(response.data as Map));
+  }
+
+  Future<NutritionDay> getNutritionDay(DateTime date) =>
+      _nutritionRequest('GET', '/nutrition/days/${formatLocalDate(date)}');
+
+  Future<NutritionDay> addNutritionEntry(
+    Map<String, dynamic> data, {
+    required String idempotencyKey,
+  }) => _nutritionRequest(
+    'POST',
+    '/nutrition/entries',
+    data: data,
+    headers: {'Idempotency-Key': idempotencyKey},
+  );
+
+  Future<NutritionDay> updateNutritionEntry(
+    String id,
+    Map<String, dynamic> data,
+  ) => _nutritionRequest('PUT', '/nutrition/entries/$id', data: data);
+
+  Future<NutritionDay> deleteNutritionEntry(String id) =>
+      _nutritionRequest('DELETE', '/nutrition/entries/$id');
+
+  Future<NutritionDay> _nutritionRequest(
+    String method,
+    String path, {
+    Object? data,
+    Map<String, String>? headers,
+  }) async {
+    final response = await _authorized(
+      method,
+      path,
+      data: data,
+      headers: headers,
+    );
+    return NutritionDay.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
   Future<Map<String, dynamic>> previewPlan() =>
       _planRequest('POST', '/plans/preview');
 
@@ -182,13 +254,17 @@ class ApiClient {
     String path, {
     Object? data,
     Map<String, dynamic>? queryParameters,
+    Map<String, String>? headers,
   }) async {
     try {
       return await _dio.request<dynamic>(
         path,
         data: data,
         queryParameters: queryParameters,
-        options: Options(method: method, headers: _authHeaders),
+        options: Options(
+          method: method,
+          headers: {..._authHeaders, ...?headers},
+        ),
       );
     } on DioException catch (error) {
       if (error.response?.statusCode != 401 || !await _refresh()) rethrow;
@@ -196,7 +272,10 @@ class ApiClient {
         path,
         data: data,
         queryParameters: queryParameters,
-        options: Options(method: method, headers: _authHeaders),
+        options: Options(
+          method: method,
+          headers: {..._authHeaders, ...?headers},
+        ),
       );
     }
   }

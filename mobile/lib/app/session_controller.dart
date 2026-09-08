@@ -23,6 +23,7 @@ class SessionController extends ChangeNotifier {
   UserAccess access = UserAccess.guest;
   int profileStep = 0;
   bool riskBlocked = false;
+  int sessionRevision = 0;
   PendingFeature? _pendingFeature;
 
   PendingFeature? get pendingFeature => _pendingFeature;
@@ -63,6 +64,7 @@ class SessionController extends ChangeNotifier {
   }
 
   Future<void> acceptLogin(LoginResult result) async {
+    sessionRevision++;
     access = result.profileComplete
         ? UserAccess.profileComplete
         : UserAccess.profileIncomplete;
@@ -104,6 +106,7 @@ class SessionController extends ChangeNotifier {
   }
 
   void completeProfile({bool blocked = false}) {
+    sessionRevision++;
     access = UserAccess.profileComplete;
     profileStep = 7;
     riskBlocked = blocked;
@@ -124,6 +127,7 @@ class SessionController extends ChangeNotifier {
 
   Future<void> logout() async {
     await api.logout();
+    sessionRevision++;
     final preferences = await SharedPreferences.getInstance();
     await preferences.setBool(_guestBrowseKey, true);
     access = UserAccess.guest;
