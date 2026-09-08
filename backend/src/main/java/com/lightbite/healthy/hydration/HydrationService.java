@@ -58,10 +58,16 @@ public class HydrationService {
             String userId, HydrationDtos.SettingsRequest request
     ) {
         ensureCompleteProfile(userId);
-        ValidatedSettings value = validateSettings(request);
+        if (request == null) throw invalid("INVALID_HYDRATION_SETTINGS", "settings", "请填写饮水设置");
         PlanTarget plan = planTarget(userId);
-        Integer existingVersion = jdbc.query("SELECT version FROM hydration_settings WHERE user_id=?",
-                rs -> rs.next() ? rs.getInt(1) : null, userId);
+        List<Map<String, Object>> existingRows = jdbc.queryForList(
+                "SELECT daily_target_ml,version FROM hydration_settings WHERE user_id=?", userId);
+        Integer existingVersion = existingRows.isEmpty() ? null : number(existingRows.get(0), "version");
+        Integer existingTarget = existingRows.isEmpty()
+                ? null : nullableInt(existingRows.get(0).get("daily_target_ml"));
+        Integer target = request.dailyTargetMl() == null ? existingTarget : request.dailyTargetMl();
+        ValidatedSettings value = validateSettings(request, target);
+        String targetSource = target != null ? "USER" : plan.amountMl() != null ? "PLAN" : "DEFAULT";
         int expected = request.version() == null ? -1 : request.version();
         if (existingVersion == null) {
             if (expected != 0) throw versionConflict();
@@ -71,11 +77,11 @@ public class HydrationService {
                         (user_id,daily_target_ml,default_cup_ml,reminder_enabled,reminder_start_time,
                          reminder_end_time,reminder_interval_minutes,quiet_start_time,quiet_end_time,
                          target_source,source_plan_version,version,updated_at)
-                        VALUES (?,?,?,?,?,?,?,?,?,'USER',?,1,?)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?)
                         """, userId, value.dailyTargetMl(), value.defaultCupMl(), value.reminderEnabled(),
                         Time.valueOf(value.reminderStart()), Time.valueOf(value.reminderEnd()),
                         value.reminderIntervalMinutes(), sqlTime(value.quietStart()), sqlTime(value.quietEnd()),
-                        plan.version(), Timestamp.from(clock.instant()));
+                        targetSource, plan.version(), Timestamp.from(clock.instant()));
             } catch (DataIntegrityViolationException exception) {
                 throw versionConflict();
             }
@@ -85,12 +91,12 @@ public class HydrationService {
                     UPDATE hydration_settings
                     SET daily_target_ml=?,default_cup_ml=?,reminder_enabled=?,reminder_start_time=?,
                         reminder_end_time=?,reminder_interval_minutes=?,quiet_start_time=?,quiet_end_time=?,
-                        target_source='USER',source_plan_version=?,version=version+1,updated_at=?
+                        target_source=?,source_plan_version=?,version=version+1,updated_at=?
                     WHERE user_id=? AND version=?
                     """, value.dailyTargetMl(), value.defaultCupMl(), value.reminderEnabled(),
                     Time.valueOf(value.reminderStart()), Time.valueOf(value.reminderEnd()),
                     value.reminderIntervalMinutes(), sqlTime(value.quietStart()), sqlTime(value.quietEnd()),
-                    plan.version(), Timestamp.from(clock.instant()), userId, expected);
+                    targetSource, plan.version(), Timestamp.from(clock.instant()), userId, expected);
             if (updated == 0) throw versionConflict();
         }
         return settings(userId);
@@ -214,10 +220,8 @@ public class HydrationService {
                 plan.amountMl(), sourceVersion, changed, number(row, "version"));
     }
 
-    private ValidatedSettings validateSettings(HydrationDtos.SettingsRequest request) {
-        if (request == null) throw invalid("INVALID_HYDRATION_SETTINGS", "settings", "请填写饮水设置");
-        Integer target = request.dailyTargetMl();
-        if (target == null || target < 500 || target > 6000 || target % 50 != 0) {
+    private ValidatedSettings validateSettings(HydrationDtos.SettingsRequest request, Integer target) {
+        if (target != null && (target < 500 || target > 6000 || target % 50 != 0)) {
             throw invalid("INVALID_DAILY_TARGET", "dailyTargetMl", "每日目标须为 500–6000 ml 且按 50 ml 调整");
         }
         Integer cup = request.defaultCupMl();
@@ -368,7 +372,7 @@ public class HydrationService {
     }
 
     private record ValidatedSettings(
-            int dailyTargetMl, int defaultCupMl, boolean reminderEnabled,
+            Integer dailyTargetMl, int defaultCupMl, boolean reminderEnabled,
             LocalTime reminderStart, LocalTime reminderEnd, int reminderIntervalMinutes,
             LocalTime quietStart, LocalTime quietEnd
     ) {

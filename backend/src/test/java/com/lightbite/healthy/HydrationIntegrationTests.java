@@ -79,11 +79,27 @@ class HydrationIntegrationTests {
                 .andExpect(jsonPath("$.fieldErrors[0].message").isNotEmpty());
 
         mockMvc.perform(put("/api/v1/hydration/settings").with(user(USER_A))
-                        .contentType(MediaType.APPLICATION_JSON).content(settingsJson(2200, 300, 0)))
+                        .contentType(MediaType.APPLICATION_JSON).content(settingsJson(null, 300, 0)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dailyTargetMl").doesNotExist())
+                .andExpect(jsonPath("$.effectiveTargetMl").value(2000))
+                .andExpect(jsonPath("$.targetSource").value("DEFAULT"))
+                .andExpect(jsonPath("$.version").value(1));
+
+        mockMvc.perform(put("/api/v1/hydration/settings").with(user(USER_A))
+                        .contentType(MediaType.APPLICATION_JSON).content(settingsJson(2200, 300, 1)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.effectiveTargetMl").value(2200))
                 .andExpect(jsonPath("$.targetSource").value("USER"))
-                .andExpect(jsonPath("$.version").value(1));
+                .andExpect(jsonPath("$.version").value(2));
+
+        mockMvc.perform(put("/api/v1/hydration/settings").with(user(USER_A))
+                        .contentType(MediaType.APPLICATION_JSON).content(settingsJson(null, 400, 2)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dailyTargetMl").value(2200))
+                .andExpect(jsonPath("$.targetSource").value("USER"))
+                .andExpect(jsonPath("$.defaultCupMl").value(400))
+                .andExpect(jsonPath("$.version").value(3));
 
         mockMvc.perform(put("/api/v1/hydration/settings").with(user(USER_A))
                         .contentType(MediaType.APPLICATION_JSON).content(settingsJson(2300, 300, 0)))
@@ -190,7 +206,7 @@ class HydrationIntegrationTests {
                 .andExpect(jsonPath("$.code").value("PROFILE_INCOMPLETE"));
     }
 
-    private String settingsJson(int target, int cup, int version) {
+    private String settingsJson(Integer target, int cup, int version) {
         return """
                 {"dailyTargetMl":%d,"defaultCupMl":%d,"reminderEnabled":false,
                  "reminderStartTime":"08:00","reminderEndTime":"22:00",

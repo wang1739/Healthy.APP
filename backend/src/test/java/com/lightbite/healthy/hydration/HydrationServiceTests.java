@@ -103,6 +103,35 @@ class HydrationServiceTests {
     }
 
     @Test
+    void updatesNonTargetSettingsWithoutSilentlyChangingTargetSource() {
+        when(plans.current(USER_ID)).thenReturn(plan(1900, 1));
+        HydrationDtos.SettingsResponse planned = service.updateSettings(USER_ID,
+                new HydrationDtos.SettingsRequest(null, 300, true, "09:00", "21:00", 90,
+                        null, null, 0));
+        assertThat(planned.dailyTargetMl()).isNull();
+        assertThat(planned.effectiveTargetMl()).isEqualTo(1900);
+        assertThat(planned.targetSource()).isEqualTo("PLAN");
+
+        when(plans.current(USER_ID)).thenReturn(plan(null, null));
+        HydrationDtos.SettingsResponse defaults = service.updateSettings(USER_ID,
+                new HydrationDtos.SettingsRequest(null, 350, false, "08:00", "22:00", 120,
+                        null, null, 1));
+        assertThat(defaults.dailyTargetMl()).isNull();
+        assertThat(defaults.effectiveTargetMl()).isEqualTo(2000);
+        assertThat(defaults.targetSource()).isEqualTo("DEFAULT");
+
+        HydrationDtos.SettingsResponse manual = service.updateSettings(USER_ID,
+                settingsRequest(2200, 400, 2));
+        HydrationDtos.SettingsResponse preserved = service.updateSettings(USER_ID,
+                new HydrationDtos.SettingsRequest(null, 500, false, "08:00", "22:00", 120,
+                        null, null, manual.version()));
+        assertThat(preserved.dailyTargetMl()).isEqualTo(2200);
+        assertThat(preserved.effectiveTargetMl()).isEqualTo(2200);
+        assertThat(preserved.targetSource()).isEqualTo("USER");
+        assertThat(preserved.defaultCupMl()).isEqualTo(500);
+    }
+
+    @Test
     void createsIdempotentlyAndReturnsAuthoritativeSummary() {
         var request = entry(250, "2026-09-08T19:30:00+08:00", "Asia/Shanghai", "QUICK");
         HydrationDtos.DayResponse first = service.create(USER_ID, "same-key", request);
