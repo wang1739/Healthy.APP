@@ -105,3 +105,18 @@ git diff --check
 ```
 
 另行检查：工作树干净、只包含预期合并/集成改动、无敏感信息、无构建产物误提交。
+
+## 七、集成审查结论
+
+已审查后端提交 `68ede63` 与 Flutter 提交 `ae66636`：
+
+- 当前计划使用顶层 `state`/`planId`/`currentVersion`，权威数值位于 `plan`；Flutter 已按该结构解析。
+- 重算和调整使用 `expectedVersion`，旧版本返回 `PLAN_VERSION_CONFLICT`。
+- 历史接口返回数组，`limit` 默认 20，服务端限制在 1–100，版本倒序。
+- 无计划返回 `state=EMPTY`；待重算使用 `plan_needs_recalculation` 持久化并返回 `NEEDS_RECALCULATION`。
+- 按 ID 的跨用户操作返回 `404 PLAN_NOT_FOUND`，不泄露资源存在性。
+- 风险和不支持目标分别使用 `PLAN_RISK_BLOCKED` 和 `PLAN_GOAL_UNSUPPORTED`，Flutter 映射为独立页面状态。
+- 集成时发现生成热量的 10 kcal 舍入与 50 kcal 调整步长冲突，已改为相对当前/生成基准校验；部分调整会合并当前版本，不再把未提交字段重置为默认值。
+- Flutter 热量滑块上界已以当前基准对齐 50 kcal 步长，避免产生服务端必然拒绝的非法数值。
+
+最终验证结果：后端 23 项测试通过，Flutter 27 项测试通过，静态分析无问题，Debug APK 构建成功，仓库检查与敏感信息扫描通过。

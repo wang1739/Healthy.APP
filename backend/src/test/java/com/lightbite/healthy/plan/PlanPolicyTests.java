@@ -34,9 +34,9 @@ class PlanPolicyTests {
 
     @Test
     void rejectsUnsafeAdjustmentStepsAndRanges() {
-        assertThatThrownBy(() -> policy.validateAdjustments(
-                new PlanCalculator.Adjustments(1475, 2000, 3, 150, new BigDecimal("8"))))
+        assertThatThrownBy(() -> policy.validateTargetKcalStep(1475, 1470))
                 .extracting("code").isEqualTo("INVALID_TARGET_KCAL_STEP");
+        policy.validateTargetKcalStep(1520, 1470);
         assertThatThrownBy(() -> policy.validateAdjustments(
                 new PlanCalculator.Adjustments(1500, 3600, 3, 150, new BigDecimal("8"))))
                 .extracting("code").isEqualTo("INVALID_WATER_TARGET");

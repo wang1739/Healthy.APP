@@ -48,9 +48,6 @@ public class PlanPolicy {
         if (adjustments == null) {
             return;
         }
-        if (adjustments.targetKcal() != null && adjustments.targetKcal() % 50 != 0) {
-            badRequest("INVALID_TARGET_KCAL_STEP", "目标热量必须按 50 千卡调整");
-        }
         if (adjustments.waterMl() != null && (adjustments.waterMl() < 1500
                 || adjustments.waterMl() > 3500 || adjustments.waterMl() % 100 != 0)) {
             badRequest("INVALID_WATER_TARGET", "饮水目标需在 1500 至 3500 毫升之间并按 100 毫升调整");
@@ -66,6 +63,12 @@ public class PlanPolicy {
                 || adjustments.sleepHours().compareTo(new BigDecimal("9")) > 0
                 || adjustments.sleepHours().multiply(new BigDecimal("2")).stripTrailingZeros().scale() > 0)) {
             badRequest("INVALID_SLEEP_TARGET", "睡眠目标需在 7 至 9 小时之间并按 0.5 小时调整");
+        }
+    }
+
+    public void validateTargetKcalStep(Integer targetKcal, int baselineKcal) {
+        if (targetKcal != null && Math.abs((long) targetKcal - baselineKcal) % 50 != 0) {
+            badRequest("INVALID_TARGET_KCAL_STEP", "目标热量必须按 50 千卡调整");
         }
     }
 

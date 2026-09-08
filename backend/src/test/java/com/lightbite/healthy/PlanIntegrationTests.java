@@ -66,19 +66,38 @@ class PlanIntegrationTests {
     }
 
     @Test
+    void generatedTenKcalTargetCanBeConfirmedAndPartialUpdatePreservesIt() throws Exception {
+        mockMvc.perform(post("/api/v1/plans").with(user(USER_A))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"targetKcal\":1470,\"waterMl\":1900}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.plan.targetKcal").value(1470));
+        String planId = jdbc.queryForObject(
+                "SELECT id FROM health_plans WHERE user_id=?", String.class, USER_A);
+
+        mockMvc.perform(put("/api/v1/plans/{id}/targets", planId).with(user(USER_A))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":1,\"waterMl\":2200}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentVersion").value(2))
+                .andExpect(jsonPath("$.plan.targetKcal").value(1470))
+                .andExpect(jsonPath("$.plan.waterMl").value(2200));
+    }
+
+    @Test
     void adjustmentRecalculationPauseResumeAndHistoryAreVersionedAndIsolated() throws Exception {
         String planId = createPlan(USER_A);
 
         mockMvc.perform(put("/api/v1/plans/{id}/targets", planId).with(user(USER_A))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"expectedVersion":1,"targetKcal":1500,"waterMl":2200,
+                                {"expectedVersion":1,"targetKcal":1520,"waterMl":2200,
                                  "exerciseDays":4,"exerciseMinutes":180,"sleepHours":8.0,
                                  "reason":"配合新的作息安排"}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.currentVersion").value(2))
-                .andExpect(jsonPath("$.plan.targetKcal").value(1500));
+                .andExpect(jsonPath("$.plan.targetKcal").value(1520));
 
         mockMvc.perform(put("/api/v1/plans/{id}/targets", planId).with(user(USER_A))
                         .contentType(MediaType.APPLICATION_JSON)

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:healthy/app/session_controller.dart';
 import 'package:healthy/core/api/api_client.dart';
 import 'package:healthy/core/theme/app_theme.dart';
+import 'package:healthy/features/plan/application/plan_controller.dart';
 import 'package:healthy/features/plan/presentation/plan_page.dart';
 
 Map<String, dynamic> _plan({
@@ -151,6 +152,18 @@ Future<void> _tapVisible(WidgetTester tester, String label) async {
 }
 
 void main() {
+  test('10 kcal 生成值的调整区间仍保持 50 kcal 步长', () {
+    final data = PlanData.fromJson({
+      ..._plan(status: 'PREVIEW'),
+      'targetKcal': 1470,
+      'tdeeKcal': 1843,
+    });
+
+    expect(data.minimumTargetKcal, 1470);
+    expect(data.maximumTargetKcal, 1820);
+    expect(data.maximumTargetKcal - data.minimumTargetKcal, 350);
+  });
+
   testWidgets('无计划时提供生成入口', (tester) async {
     await _pump(tester, _FakePlanApi({'status': 'EMPTY'}));
     expect(find.text('还没有减脂计划'), findsOneWidget);

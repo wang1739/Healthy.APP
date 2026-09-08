@@ -86,7 +86,8 @@ class PlanData {
   int get maximumTargetKcal {
     final supplied = (value('maximumTargetKcal') as num?)?.toInt();
     if (supplied != null) return supplied;
-    return math.max(minimumTargetKcal, ((tdeeKcal - 1) / 50).floor() * 50);
+    final steps = ((tdeeKcal - 1 - minimumTargetKcal) / 50).floor();
+    return math.max(minimumTargetKcal, minimumTargetKcal + steps * 50);
   }
 }
 

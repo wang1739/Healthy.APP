@@ -39,9 +39,13 @@ public class PlanService {
         if (count("SELECT COUNT(*) FROM health_plans WHERE user_id = ?", userId) > 0) {
             throw conflict("PLAN_ALREADY_EXISTS", "当前计划已存在");
         }
+        PlanPolicy.ProfileSnapshot profile = snapshot(userId);
         PlanCalculator.Adjustments adjustments = request == null ? null : request.toAdjustments();
         policy.validateAdjustments(adjustments);
-        PlanPolicy.ProfileSnapshot profile = snapshot(userId);
+        if (adjustments != null && adjustments.targetKcal() != null) {
+            int generatedTargetKcal = calculate(profile, null).targetKcal();
+            policy.validateTargetKcalStep(adjustments.targetKcal(), generatedTargetKcal);
+        }
         PlanCalculator.Result result = calculate(profile, adjustments);
         String planId = UUID.randomUUID().toString();
         LocalDate today = LocalDate.now();
@@ -106,12 +110,21 @@ public class PlanService {
                 "SELECT plan_needs_recalculation FROM health_profiles WHERE user_id=?", Boolean.class, userId))) {
             throw conflict("PLAN_RECALCULATION_REQUIRED", "健康档案已变化，请先重新计算计划");
         }
-        PlanCalculator.Adjustments adjustments = request.toAdjustments();
-        if (adjustments.targetKcal() == null && adjustments.waterMl() == null
-                && adjustments.exerciseDays() == null && adjustments.exerciseMinutes() == null
-                && adjustments.sleepHours() == null) {
+        PlanCalculator.Adjustments requested = request.toAdjustments();
+        if (requested.targetKcal() == null && requested.waterMl() == null
+                && requested.exerciseDays() == null && requested.exerciseMinutes() == null
+                && requested.sleepHours() == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "PLAN_TARGETS_REQUIRED", "请至少调整一项目标");
         }
+        Map<String, Object> currentVersion = version(planId, request.expectedVersion());
+        policy.validateTargetKcalStep(requested.targetKcal(), number(currentVersion, "target_kcal"));
+        PlanCalculator.Adjustments adjustments = new PlanCalculator.Adjustments(
+                requested.targetKcal() == null ? number(currentVersion, "target_kcal") : requested.targetKcal(),
+                requested.waterMl() == null ? number(currentVersion, "water_ml") : requested.waterMl(),
+                requested.exerciseDays() == null ? number(currentVersion, "exercise_days") : requested.exerciseDays(),
+                requested.exerciseMinutes() == null
+                        ? number(currentVersion, "exercise_minutes") : requested.exerciseMinutes(),
+                requested.sleepHours() == null ? decimal(currentVersion, "sleep_hours") : requested.sleepHours());
         policy.validateAdjustments(adjustments);
         PlanPolicy.ProfileSnapshot profile = snapshot(userId);
         PlanCalculator.Result result = calculate(profile, adjustments);
