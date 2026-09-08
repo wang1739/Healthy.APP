@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -25,6 +27,9 @@ class AuthProfileIntegrationTests {
 
     @Autowired
     private WebApplicationContext applicationContext;
+
+    @Autowired
+    private JdbcTemplate jdbc;
 
     private MockMvc mockMvc;
 
@@ -145,5 +150,41 @@ class AuthProfileIntegrationTests {
                                 """))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("INVALID_VERIFICATION_CODE"));
+    }
+
+    @Test
+    void migratedCompletedOtherProfileReturnsToBasicsUntilBasisIsSelected() throws Exception {
+        String userId = "legacy-other-profile";
+        jdbc.update("MERGE INTO users (id, phone, status) KEY(id) VALUES (?, ?, 'ACTIVE')",
+                userId, "13700137000");
+        jdbc.update("DELETE FROM health_profiles WHERE user_id=?", userId);
+        jdbc.update("""
+                INSERT INTO health_profiles
+                (user_id,birth_date,sex,metabolic_basis,height_cm,activity_level,work_style,sleep_hours,
+                 exercise_days,current_step,completed,risk_blocked)
+                VALUES (?,'1990-05-06','OTHER',NULL,170,'LIGHT','SEDENTARY',8,3,7,TRUE,FALSE)
+                """, userId);
+
+        mockMvc.perform(get("/api/v1/profile/completeness").with(user(userId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.complete").value(false))
+                .andExpect(jsonPath("$.currentStep").value(0))
+                .andExpect(jsonPath("$.percentage").value(99))
+                .andExpect(jsonPath("$.metabolicBasisRequired").value(true))
+                .andExpect(jsonPath("$.sex").value("OTHER"))
+                .andExpect(jsonPath("$.birthDate").value("1990-05-06"));
+        mockMvc.perform(get("/api/v1/account").with(user(userId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.profileComplete").value(false));
+
+        mockMvc.perform(put("/api/v1/profile").with(user(userId))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"metabolicBasis\":\"FEMALE\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.complete").value(true))
+                .andExpect(jsonPath("$.currentStep").value(7));
+        mockMvc.perform(get("/api/v1/account").with(user(userId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.profileComplete").value(true));
     }
 }

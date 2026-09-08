@@ -31,7 +31,10 @@ public class AccountController {
                 SELECT id, phone, display_name FROM users WHERE id = ?
                 """, authentication.getName());
         boolean profileComplete = Boolean.TRUE.equals(jdbc.queryForObject(
-                "SELECT EXISTS(SELECT 1 FROM health_profiles WHERE user_id = ? AND completed = TRUE)",
+                """
+                SELECT EXISTS(SELECT 1 FROM health_profiles
+                WHERE user_id = ? AND completed = TRUE AND metabolic_basis IS NOT NULL)
+                """,
                 Boolean.class,
                 authentication.getName()
         ));

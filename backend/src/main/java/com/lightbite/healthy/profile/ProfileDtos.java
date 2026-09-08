@@ -71,7 +71,11 @@ public final class ProfileDtos {
             int percentage,
             boolean complete,
             boolean riskBlocked,
-            boolean planNeedsRecalculation
+            boolean planNeedsRecalculation,
+            boolean metabolicBasisRequired,
+            String sex,
+            String metabolicBasis,
+            LocalDate birthDate
     ) {
     }
 }

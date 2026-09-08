@@ -215,18 +215,26 @@ public class ProfileService {
     public ProfileDtos.CompletenessResponse completeness(String userId) {
         ensureProfile(userId);
         Map<String, Object> profile = jdbc.queryForMap("""
-                SELECT current_step, completed, metabolic_basis, risk_blocked, plan_needs_recalculation
+                SELECT current_step, completed, birth_date, sex, metabolic_basis,
+                       risk_blocked, plan_needs_recalculation
                 FROM health_profiles WHERE user_id = ?
                 """, userId);
         int step = ((Number) profile.get("current_step")).intValue();
+        String sex = (String) profile.get("sex");
+        String metabolicBasis = (String) profile.get("metabolic_basis");
         boolean complete = Boolean.TRUE.equals(profile.get("completed"))
-                && profile.get("metabolic_basis") != null;
+                && metabolicBasis != null;
+        boolean metabolicBasisRequired = "OTHER".equals(sex) && metabolicBasis == null && step > 0;
         return new ProfileDtos.CompletenessResponse(
-                step,
-                complete ? 100 : Math.min(99, step * 100 / 7),
+                metabolicBasisRequired ? 0 : step,
+                complete ? 100 : metabolicBasisRequired ? 99 : Math.min(99, step * 100 / 7),
                 complete,
                 Boolean.TRUE.equals(profile.get("risk_blocked")),
-                Boolean.TRUE.equals(profile.get("plan_needs_recalculation"))
+                Boolean.TRUE.equals(profile.get("plan_needs_recalculation")),
+                metabolicBasisRequired,
+                sex,
+                metabolicBasis,
+                toLocalDate(profile.get("birth_date"))
         );
     }
 

@@ -6,16 +6,15 @@ import 'package:healthy/core/api/api_client.dart';
 import 'package:healthy/features/profile/presentation/profile_wizard_page.dart';
 
 class _FakeApiClient extends ApiClient {
-  _FakeApiClient({this.step = 0}) : super(dio: Dio());
+  _FakeApiClient({this.step = 0, this.completeness}) : super(dio: Dio());
 
   final int step;
+  final Map<String, dynamic>? completeness;
   final savedProfiles = <Map<String, dynamic>>[];
 
   @override
-  Future<Map<String, dynamic>> profileCompleteness() async => {
-    'complete': false,
-    'currentStep': step,
-  };
+  Future<Map<String, dynamic>> profileCompleteness() async =>
+      completeness ?? {'complete': false, 'currentStep': step};
 
   @override
   Future<void> saveProfile(Map<String, dynamic> data) async {
@@ -84,6 +83,40 @@ void main() {
     await tester.tap(find.text('保存并继续'));
     await tester.pump();
     expect(find.text('请选择代谢计算依据'), findsOneWidget);
+  });
+
+  testWidgets('旧 OTHER 已完成档案回到基础资料补选后直接完成', (tester) async {
+    final api = _FakeApiClient(
+      completeness: {
+        'complete': false,
+        'currentStep': 0,
+        'percentage': 99,
+        'metabolicBasisRequired': true,
+        'sex': 'OTHER',
+        'birthDate': '1990-05-06',
+      },
+    );
+    var completed = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('zh', 'CN'),
+        supportedLocales: const [Locale('zh', 'CN')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        home: ProfileWizardPage(api: api, onCompleted: () => completed = true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('代谢计算依据'), findsOneWidget);
+    final birthDate = tester.widget<TextField>(find.byType(TextField).first);
+    expect(birthDate.controller?.text, '1990-05-06');
+
+    await tester.tap(find.text('女性公式'));
+    await tester.tap(find.text('保存并继续'));
+    await tester.pumpAndSettle();
+
+    expect(api.savedProfiles.single['metabolicBasis'], 'FEMALE');
+    expect(completed, isTrue);
   });
 
   testWidgets('身体数值使用数字键盘手动填写', (tester) async {

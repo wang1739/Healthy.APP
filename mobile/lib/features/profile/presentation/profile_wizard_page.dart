@@ -64,6 +64,7 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
   bool _eatingDisorderRisk = false;
   bool _seriousDisease = false;
   bool _unsafeTarget = false;
+  bool _repairMetabolicBasis = false;
   double _sleepHours = 7.5;
   int _exerciseDays = 3;
   final Set<String> _allergies = {'无'};
@@ -79,10 +80,14 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
     try {
       final data = await widget.api.profileCompleteness();
       if (mounted && data['complete'] != true) {
-        setState(
-          () =>
-              _step = ((data['currentStep'] as num?)?.toInt() ?? 0).clamp(0, 6),
-        );
+        setState(() {
+          _step = ((data['currentStep'] as num?)?.toInt() ?? 0).clamp(0, 6);
+          _repairMetabolicBasis = data['metabolicBasisRequired'] == true;
+          _riskBlocked = data['riskBlocked'] == true;
+          _sex = data['sex']?.toString() ?? _sex;
+          _metabolicBasis = data['metabolicBasis']?.toString();
+          _birthDate.text = data['birthDate']?.toString() ?? _birthDate.text;
+        });
       }
     } catch (_) {
       // A new profile starts from step one when the server has no saved progress.
@@ -114,6 +119,15 @@ class _ProfileWizardPageState extends State<ProfileWizardPage> {
     try {
       await _saveStep();
       if (!mounted) return;
+      if (_repairMetabolicBasis && _step == 0) {
+        _repairMetabolicBasis = false;
+        if (_riskBlocked) {
+          (widget.onBlocked ?? widget.onCompleted)();
+        } else {
+          widget.onCompleted();
+        }
+        return;
+      }
       if (_step < 6) {
         setState(() => _step++);
       } else {
