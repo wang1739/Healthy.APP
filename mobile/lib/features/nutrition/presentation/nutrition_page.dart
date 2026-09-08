@@ -167,6 +167,9 @@ class _NutritionPageState extends ConsumerState<NutritionPage>
       floatingActionButton: state.data != null && !state.futureDate
           ? FloatingActionButton.extended(
               onPressed: () => _openEditor(controller, _recommendedMeal()),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(6),
+              ),
               icon: const Icon(Icons.add),
               label: const Text('添加食物'),
             )

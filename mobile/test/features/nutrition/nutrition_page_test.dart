@@ -201,6 +201,17 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('底部添加操作使用 6px 圆角', (tester) async {
+    await tester.pumpWidget(page(access: UserAccess.profileComplete));
+    await tester.pumpAndSettle();
+
+    final button = tester.widget<FloatingActionButton>(
+      find.byType(FloatingActionButton),
+    );
+    final shape = button.shape! as RoundedRectangleBorder;
+    expect(shape.borderRadius, BorderRadius.circular(6));
+  });
+
   testWidgets('编辑复用录入弹层且删除需要中文确认', (tester) async {
     final api = _FakeApi();
     await tester.pumpWidget(page(access: UserAccess.profileComplete, api: api));

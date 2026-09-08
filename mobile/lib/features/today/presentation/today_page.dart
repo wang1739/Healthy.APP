@@ -333,15 +333,11 @@ class _TodayPageState extends ConsumerState<TodayPage>
         _moduleCard(
           '饮食',
           data.nutrition.consumedKcal == null
-              ? (data.plan.targetKcal == null
-                    ? null
-                    : '${data.plan.targetKcal} kcal')
+              ? null
               : data.nutrition.targetKcal == null
               ? '${data.nutrition.consumedKcal} kcal'
               : '${data.nutrition.consumedKcal} / ${data.nutrition.targetKcal} kcal',
-          data.plan.status == TodayModuleStatus.error
-              ? TodayModuleStatus.error
-              : data.nutrition.status,
+          data.nutrition.status,
           Icons.restaurant_outlined,
           data.nutrition.message,
         ),

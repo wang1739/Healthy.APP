@@ -135,13 +135,17 @@ class NutritionController extends ChangeNotifier {
     Future<NutritionDay> Function() action, {
     required bool clearDraft,
   }) async {
+    final operationDate = state.date;
     final existing = state.data;
+    _request++;
     state = _copy(saving: true, clearSaveError: true);
     notifyListeners();
     try {
       final data = await action();
       _cache[formatLocalDate(data.date)] = data;
       if (_disposed) return;
+      if (formatLocalDate(state.date) != formatLocalDate(operationDate)) return;
+      _request++;
       state = NutritionViewState(
         date: state.date,
         data: data,
@@ -151,6 +155,7 @@ class NutritionController extends ChangeNotifier {
       _idempotencyKey = null;
     } catch (error) {
       if (_disposed) return;
+      if (formatLocalDate(state.date) != formatLocalDate(operationDate)) return;
       state = NutritionViewState(
         date: state.date,
         data: existing,

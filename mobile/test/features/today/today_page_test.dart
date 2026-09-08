@@ -233,6 +233,32 @@ void main() {
     expect(find.text('该项数据暂时无法加载'), findsWidgets);
   });
 
+  testWidgets('计划失败不覆盖真实饮食，饮食失败不展示计划目标', (tester) async {
+    final planFailure = overview(planStatus: 'ERROR');
+    planFailure['nutrition'] = {
+      'status': 'READY',
+      'consumedKcal': 321,
+      'proteinG': 20.5,
+      'carbsG': 30.2,
+      'fatG': 8.1,
+    };
+    await _pumpPage(tester, _FakeApi(planFailure), UserAccess.profileComplete);
+    expect(find.text('321 kcal'), findsOneWidget);
+    expect(find.text('数据已更新'), findsNWidgets(2));
+
+    final nutritionFailure = overview();
+    nutritionFailure['nutrition'] = {
+      'status': 'ERROR',
+      'message': '该项数据暂时无法加载',
+    };
+    await _pumpPage(
+      tester,
+      _FakeApi(nutritionFailure),
+      UserAccess.profileComplete,
+    );
+    expect(find.text('1470 kcal'), findsOneWidget);
+  });
+
   testWidgets('整体网络失败显示重新加载', (tester) async {
     final api = _FakeApi(overview())..fail = true;
     await _pumpPage(tester, api, UserAccess.profileComplete);

@@ -23,6 +23,7 @@ class _FakeApi extends ApiClient {
   int writes = 0;
   bool fail = false;
   Completer<NutritionDay>? pending;
+  Completer<NutritionDay>? pendingWrite;
   final keys = <String>[];
   Map<String, dynamic>? updated;
 
@@ -41,6 +42,7 @@ class _FakeApi extends ApiClient {
   }) async {
     writes++;
     keys.add(idempotencyKey);
+    if (pendingWrite != null) return pendingWrite!.future;
     if (fail) throw DioException(requestOptions: RequestOptions());
     return day(data['date'] as String, calories: 174);
   }
@@ -131,6 +133,44 @@ void main() {
 
     expect(controller.state.date, DateTime(2026, 9, 8));
     expect(controller.state.data?.date, DateTime(2026, 9, 8));
+  });
+
+  test('写入权威响应不被较早读取覆盖', () async {
+    final api = _FakeApi();
+    final controller = NutritionController(
+      api,
+      userKey: 'user-a',
+      now: () => DateTime(2026, 9, 8),
+    );
+    await controller.load(DateTime(2026, 9, 8));
+
+    api.pending = Completer<NutritionDay>();
+    final staleRead = controller.refresh();
+    final pending = api.pending!;
+    api.pending = null;
+    await controller.add({'foodId': 'rice', 'grams': 150});
+    pending.complete(day('2026-09-08', calories: 10));
+    await staleRead;
+
+    expect(controller.state.data?.summary.calories, 174);
+  });
+
+  test('切换日期后不显示旧日期的写入响应', () async {
+    final api = _FakeApi()..pendingWrite = Completer<NutritionDay>();
+    final controller = NutritionController(
+      api,
+      userKey: 'user-a',
+      now: () => DateTime(2026, 9, 8),
+    );
+    await controller.load(DateTime(2026, 9, 8));
+
+    final write = controller.add({'foodId': 'rice', 'grams': 150});
+    await controller.load(DateTime(2026, 9, 7));
+    api.pendingWrite!.complete(day('2026-09-08', calories: 174));
+    await write;
+
+    expect(controller.state.date, DateTime(2026, 9, 7));
+    expect(controller.state.data?.date, DateTime(2026, 9, 7));
   });
 
   test('自动释放后不复用上一账户缓存', () async {

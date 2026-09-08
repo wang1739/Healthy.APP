@@ -115,6 +115,9 @@ class _FoodEntrySheetState extends State<FoodEntrySheet> {
                   ChoiceChip(
                     label: Text(type.label),
                     selected: _meal == type,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
                     onSelected: (_) => setState(() => _meal = type),
                   ),
               ],
@@ -187,6 +190,9 @@ class _FoodEntrySheetState extends State<FoodEntrySheet> {
                 ChoiceChip(
                   label: Text(portion.label),
                   selected: grams == portion.grams,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6),
+                  ),
                   onSelected: (_) =>
                       setState(() => _grams.text = _format(portion.grams)),
                 ),
@@ -228,14 +234,14 @@ class _FoodEntrySheetState extends State<FoodEntrySheet> {
         ),
         TextFormField(
           controller: _grams,
-          keyboardType: TextInputType.number,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: const InputDecoration(labelText: '本次克数', suffixText: 'g'),
           onChanged: (_) => setState(() {}),
           validator: _validateGrams,
         ),
         TextFormField(
           controller: _baseGrams,
-          keyboardType: TextInputType.number,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: const InputDecoration(
             labelText: '营养基准克数',
             suffixText: 'g',
@@ -246,7 +252,7 @@ class _FoodEntrySheetState extends State<FoodEntrySheet> {
         TextFormField(
           key: const Key('custom-calories'),
           controller: _calories,
-          keyboardType: TextInputType.number,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: const InputDecoration(
             labelText: '基准份量热量',
             suffixText: 'kcal',
@@ -261,7 +267,7 @@ class _FoodEntrySheetState extends State<FoodEntrySheet> {
         ])
           TextFormField(
             controller: field.$1,
-            keyboardType: TextInputType.number,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: InputDecoration(labelText: field.$2, suffixText: 'g'),
             onChanged: (_) => setState(() {}),
             validator: _validateNonNegative,
@@ -286,7 +292,7 @@ class _FoodEntrySheetState extends State<FoodEntrySheet> {
   String? _validateGrams(String? value) {
     final number = double.tryParse(value ?? '');
     return number == null || number <= 0 || number > 5000
-        ? '请输入 0–5000 克之间的数值'
+        ? '请输入大于 0 且不超过 5000 克的数值'
         : null;
   }
 
