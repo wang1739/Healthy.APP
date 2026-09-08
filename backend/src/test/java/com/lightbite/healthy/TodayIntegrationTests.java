@@ -33,6 +33,7 @@ class TodayIntegrationTests {
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.webAppContextSetup(applicationContext).apply(springSecurity()).build();
+        jdbc.update("DELETE FROM meal_entries");
         jdbc.update("DELETE FROM health_plan_versions");
         jdbc.update("DELETE FROM health_plans");
         createProfile(USER_A, "13800000011", "62.5");
@@ -58,19 +59,39 @@ class TodayIntegrationTests {
     }
 
     @Test
-    void returnsEmptyPlanLatestWeightAndFutureModuleStates() throws Exception {
+    void returnsEmptyPlanLatestWeightAndEmptyNutrition() throws Exception {
         mockMvc.perform(get("/api/v1/today?date=2026-09-08").with(user(USER_A)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.date").value("2026-09-08"))
                 .andExpect(jsonPath("$.plan.status").value("EMPTY"))
                 .andExpect(jsonPath("$.weight.status").value("READY"))
                 .andExpect(jsonPath("$.weight.valueKg").value(62.5))
-                .andExpect(jsonPath("$.nutrition.status").value("COMING_SOON"))
+                .andExpect(jsonPath("$.nutrition.status").value("EMPTY"))
+                .andExpect(jsonPath("$.nutrition.consumedKcal").value(0))
+                .andExpect(jsonPath("$.nutrition.targetKcal").doesNotExist())
                 .andExpect(jsonPath("$.nextAction.type").value("CREATE_PLAN"));
 
         mockMvc.perform(get("/api/v1/today?date=2026-09-08").with(user(USER_B)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.weight.valueKg").value(78.4));
+    }
+
+    @Test
+    void returnsRealNutritionTotalsAndActiveTarget() throws Exception {
+        mockMvc.perform(post("/api/v1/plans").with(user(USER_A))
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isCreated());
+        jdbc.update("INSERT INTO meal_entries (id,user_id,entry_date,meal_type,food_id,food_name_snapshot,grams,"
+                + "calories_snapshot,protein_snapshot,carbs_snapshot,fat_snapshot,idempotency_key) "
+                + "VALUES ('today-meal',?,'2026-09-08','LUNCH','sys-rice','米饭',150,174,3.9,38.85,.45,'today-key')",
+                USER_A);
+
+        mockMvc.perform(get("/api/v1/today?date=2026-09-08").with(user(USER_A)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nutrition.status").value("READY"))
+                .andExpect(jsonPath("$.nutrition.consumedKcal").value(174))
+                .andExpect(jsonPath("$.nutrition.proteinG").value(3.9))
+                .andExpect(jsonPath("$.nutrition.targetKcal").isNumber());
     }
 
     @Test

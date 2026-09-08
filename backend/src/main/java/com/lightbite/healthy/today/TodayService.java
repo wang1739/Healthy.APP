@@ -2,6 +2,8 @@ package com.lightbite.healthy.today;
 
 import com.lightbite.healthy.plan.PlanDtos;
 import com.lightbite.healthy.plan.PlanService;
+import com.lightbite.healthy.nutrition.NutritionDtos;
+import com.lightbite.healthy.nutrition.NutritionService;
 import com.lightbite.healthy.profile.ProfileDtos;
 import com.lightbite.healthy.profile.ProfileService;
 import java.time.LocalDate;
@@ -17,10 +19,12 @@ public class TodayService {
 
     private final PlanService plans;
     private final ProfileService profiles;
+    private final NutritionService nutrition;
 
-    public TodayService(PlanService plans, ProfileService profiles) {
+    public TodayService(PlanService plans, ProfileService profiles, NutritionService nutrition) {
         this.plans = plans;
         this.profiles = profiles;
+        this.nutrition = nutrition;
     }
 
     public TodayDtos.TodayResponse get(String userId, LocalDate date) {
@@ -31,8 +35,23 @@ public class TodayService {
         }
         TodayDtos.WeightModule weight = weight(userId);
         return new TodayDtos.TodayResponse(
-                date, plan, weight, COMING_SOON, COMING_SOON, COMING_SOON, COMING_SOON, COMING_SOON,
+                date, plan, weight, nutrition(userId, date), COMING_SOON, COMING_SOON, COMING_SOON, COMING_SOON,
                 nextAction(profile, plan));
+    }
+
+    private TodayDtos.NutritionModule nutrition(String userId, LocalDate date) {
+        try {
+            NutritionDtos.DayResponse day = nutrition.day(userId, date);
+            NutritionDtos.Nutrients total = day.total();
+            NutritionDtos.TargetResponse target = day.target();
+            return new TodayDtos.NutritionModule(
+                    "EMPTY".equals(day.status()) ? TodayDtos.ModuleStatus.EMPTY : TodayDtos.ModuleStatus.READY,
+                    total.calories().intValue(), target == null ? null : target.calories(),
+                    total.protein(), total.carbs(), total.fat(), null);
+        } catch (RuntimeException exception) {
+            return new TodayDtos.NutritionModule(
+                    TodayDtos.ModuleStatus.ERROR, null, null, null, null, null, LOAD_ERROR);
+        }
     }
 
     private ProfileDtos.CompletenessResponse profile(String userId) {
