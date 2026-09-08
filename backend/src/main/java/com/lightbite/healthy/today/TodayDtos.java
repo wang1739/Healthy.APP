@@ -40,6 +40,17 @@ public final class TodayDtos {
     public record Module(ModuleStatus status, String message) {
     }
 
+    public record NutritionModule(
+            ModuleStatus status,
+            Integer consumedKcal,
+            Integer targetKcal,
+            BigDecimal proteinG,
+            BigDecimal carbsG,
+            BigDecimal fatG,
+            String message
+    ) {
+    }
+
     public record NextAction(String type, String title) {
     }
 
@@ -47,7 +58,7 @@ public final class TodayDtos {
             LocalDate date,
             PlanModule plan,
             WeightModule weight,
-            Module nutrition,
+            NutritionModule nutrition,
             Module hydration,
             Module activity,
             Module sleep,

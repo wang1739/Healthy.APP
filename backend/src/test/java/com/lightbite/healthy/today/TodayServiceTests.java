@@ -6,6 +6,8 @@ import static org.mockito.Mockito.when;
 
 import com.lightbite.healthy.plan.PlanDtos;
 import com.lightbite.healthy.plan.PlanService;
+import com.lightbite.healthy.nutrition.NutritionDtos;
+import com.lightbite.healthy.nutrition.NutritionService;
 import com.lightbite.healthy.profile.ProfileDtos;
 import com.lightbite.healthy.profile.ProfileService;
 import java.math.BigDecimal;
@@ -20,14 +22,17 @@ class TodayServiceTests {
     private static final String USER_ID = "today-user";
     private final PlanService plans = mock(PlanService.class);
     private final ProfileService profiles = mock(ProfileService.class);
+    private final NutritionService nutrition = mock(NutritionService.class);
     private TodayService service;
 
     @BeforeEach
     void setUp() {
-        service = new TodayService(plans, profiles);
+        service = new TodayService(plans, profiles, nutrition);
         when(profiles.completeness(USER_ID)).thenReturn(completeness(true, false));
         when(profiles.measurements(USER_ID)).thenReturn(List.of());
         when(plans.current(USER_ID)).thenReturn(current("EMPTY", null));
+        when(nutrition.day(USER_ID, LocalDate.of(2026, 9, 8))).thenReturn(day("EMPTY", null));
+        when(nutrition.day(USER_ID, LocalDate.now())).thenReturn(day("EMPTY", null));
     }
 
     @Test
@@ -87,14 +92,34 @@ class TodayServiceTests {
     }
 
     @Test
-    void marksFutureRecordModulesAsComingSoon() {
+    void returnsEmptyNutritionWhileOtherFutureModulesStayComingSoon() {
         TodayDtos.TodayResponse response = service.get(USER_ID, LocalDate.now());
 
-        assertThat(response.nutrition().status()).isEqualTo(TodayDtos.ModuleStatus.COMING_SOON);
+        assertThat(response.nutrition().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
         assertThat(response.hydration().status()).isEqualTo(TodayDtos.ModuleStatus.COMING_SOON);
         assertThat(response.activity().status()).isEqualTo(TodayDtos.ModuleStatus.COMING_SOON);
         assertThat(response.sleep().status()).isEqualTo(TodayDtos.ModuleStatus.COMING_SOON);
         assertThat(response.tasks().status()).isEqualTo(TodayDtos.ModuleStatus.COMING_SOON);
+    }
+
+    @Test
+    void mapsReadyNutritionAndContainsItsFailure() {
+        LocalDate date = LocalDate.of(2026, 9, 8);
+        when(nutrition.day(USER_ID, date)).thenReturn(day("READY",
+                new NutritionDtos.TargetResponse(1470, 110, 155, 45)));
+
+        TodayDtos.TodayResponse ready = service.get(USER_ID, date);
+        assertThat(ready.nutrition().status()).isEqualTo(TodayDtos.ModuleStatus.READY);
+        assertThat(ready.nutrition().consumedKcal()).isEqualTo(321);
+        assertThat(ready.nutrition().targetKcal()).isEqualTo(1470);
+        assertThat(ready.nutrition().proteinG()).isEqualByComparingTo("20.5");
+
+        when(nutrition.day(USER_ID, date)).thenThrow(new IllegalStateException("sql detail"));
+        TodayDtos.TodayResponse failed = service.get(USER_ID, date);
+        assertThat(failed.nutrition().status()).isEqualTo(TodayDtos.ModuleStatus.ERROR);
+        assertThat(failed.nutrition().message()).doesNotContain("sql detail");
+        assertThat(failed.plan().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
+        assertThat(failed.weight().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
     }
 
     @Test
@@ -140,5 +165,11 @@ class TodayServiceTests {
                 "FAT_LOSS_V1", true, new BigDecimal("22.96"), 1320, 1815,
                 1470, 110, 155, 45, 1900, 4, 35, new BigDecimal("8.0"),
                 new BigDecimal("-0.3"), LocalDate.of(2027, 3, 1), "请根据身体感受调整");
+    }
+
+    private NutritionDtos.DayResponse day(String status, NutritionDtos.TargetResponse target) {
+        return new NutritionDtos.DayResponse(LocalDate.of(2026, 9, 8), status, List.of(),
+                new NutritionDtos.Nutrients(new BigDecimal("321"), new BigDecimal("20.5"),
+                        new BigDecimal("30.4"), new BigDecimal("8.1")), target);
     }
 }
