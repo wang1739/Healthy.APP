@@ -236,7 +236,10 @@ public class AuthService {
 
     private boolean isProfileComplete(String userId) {
         Integer count = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM health_profiles WHERE user_id = ? AND completed = TRUE",
+                """
+                SELECT COUNT(*) FROM health_profiles
+                WHERE user_id = ? AND completed = TRUE AND metabolic_basis IS NOT NULL
+                """,
                 Integer.class, userId);
         return count != null && count > 0;
     }

@@ -17,6 +17,7 @@ public final class ProfileDtos {
     public record ProfileRequest(
             LocalDate birthDate,
             String sex,
+            String metabolicBasis,
             @DecimalMin("100") @DecimalMax("230") BigDecimal heightCm,
             String activityLevel,
             String workStyle,
