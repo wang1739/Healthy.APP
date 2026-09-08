@@ -2,11 +2,11 @@
 
 日期：2026-09-08
 
-验收分支：`codex/today-qa`
+验收分支：`codex/today-final-qa`
 
 设计与计划基线：`origin/main@4f353b3195b36ed9628829644e266797dd5bca13`
 
-当前阶段：基线已验证，功能候选待集成
+当前阶段：候选已集成，自动化验收通过；Android 设备实测待测
 
 ## 1. 范围与判定原则
 
@@ -24,11 +24,13 @@
 
 | 项目 | 结果 |
 |---|---|
-| 工作树 | `E:\Healthy-worktrees\fat-loss-qa` |
-| QA 分支 | `codex/today-qa`，从 `origin/main` 创建 |
+| 工作树 | `E:\Healthy` |
+| QA 分支 | `codex/today-final-qa`，从 `origin/main` 创建 |
 | 基线提交 | `4f353b3195b36ed9628829644e266797dd5bca13` |
-| 后端候选 | `codex/today-backend@b71940b`（包含 `c0618db`；候选侧报告针对性 8 项通过），已收到，待代码审查与集成 |
-| Flutter 候选 | 尚未收到 |
+| QA 文档候选 | `779c72779c0ca20b40630f8c315d3423b289f49e`；已集成为 `8ce59a9eb593de46393b236088021cc8d1d7c549` |
+| 后端候选 | `3fc59c5fc6e9b32ff616be48187743e03504e3f8`（包含 `c0618db`、`b71940b`）；已合并为 `2df997c39147c503df3c075c4c9671974756ed96` |
+| Flutter 候选 | `1f649099971f2ab66943f3d9b59f40241eb73215`；已合并为 `c7b18b0f530ba162dc53ad4353185a93fe1e8b70` |
+| QA 修复 | `e438790456ae2817b6653ebb07497a1e2ea7faec`：换号缓存隔离与 6px 弹层圆角；`8c45e84ad3375a32b9bd9ba1ed813cb2e3d34682`：销毁后丢弃在途响应与本地跨日回归 |
 | main 操作 | 未修改、未推送 |
 
 ## 3. 后端接口验收矩阵
@@ -157,8 +159,65 @@
 
 ## 8. 最终集成放行门槛
 
-1. 后端、Flutter 候选均以明确提交哈希合入 `codex/today-qa`，不得直接修改或推送 `main`。
+1. 后端、Flutter 候选均以明确提交哈希合入 `codex/today-final-qa`，不得直接修改或推送 `main`。
 2. API-01 至 API-28、APP-01 至 APP-34、CAR-01 至 CAR-08 均有自动化或人工证据；高风险项不得未决。
 3. 后端全量测试、Flutter 全量测试、`flutter analyze`、Debug APK、`scripts/check.ps1`、`git diff --check` 和敏感信息扫描全部通过。
 4. 无 Android 设备时必须保留“设备待测”，不得把 APK 构建成功描述为真机验收。
 5. 最终报告列出合并提交、QA 修复提交、通过项、失败/未测项及是否建议合入 `main`。
+
+## 9. 最终集成与验收记录
+
+本节为最终结果，优先于上文候选集成前的“待集成”标记。三项候选从精确基线 `origin/main@4f353b3195b36ed9628829644e266797dd5bca13` 集成，无文本冲突；未推送任何分支，未合并或修改 `main`。
+
+### 9.1 QA 修复
+
+代码复核发现 `todayControllerProvider` 以长期存活的 `ApiClient` 为键，登出后换号可能保留前一账户同日成功数据；若新账户请求失败，存在把旧数据作为 stale 内容展示的风险。修复将提供器改为 `autoDispose`，页面离开后立即释放用户数据，并增加先失败后通过的 provider 生命周期及账户切换回归测试。控制器销毁后会丢弃仍在途的成功或失败响应；缓存按请求日期切换，跨日不复用旧日期数据，并通过可注入本地时钟验证同日恢复不重复请求、跨日恢复重新加载。
+
+同时为全局 `DialogTheme` 补充 6px 圆角和测试，使风险提示等主要弹层符合视觉规格。未新增依赖、持久缓存、数据库表或业务抽象。
+
+### 9.2 重点场景结果
+
+| 场景 | 结果与证据 |
+|---|---|
+| 缺少或非法 `date` | 通过；`TodayIntegrationTests.requiresAuthenticationAndValidDate` 验证缺参数与错误格式均为 400、统一中文错误 |
+| 档案不完整 | 通过；历史计划目标被隐藏，返回 `PROFILE_INCOMPLETE` 与 `COMPLETE_PROFILE`；Flutter 未建档不请求私人接口 |
+| 风险拦截 | 通过；不返回/展示普通目标，行动为 `VIEW_RISK_GUIDANCE`，中文健康建议 |
+| 暂停与需重算 | 通过；后端状态及 Flutter 中文行动均有自动化覆盖 |
+| 模块独立失败 | 通过；计划、体重分别失败及同时失败均保持聚合结构，错误不泄露内部异常 |
+| 游客访问 | 通过；Widget 测试证明游客不调用 `/today` 且不显示虚构数值 |
+| 用户与日期隔离 | 通过；后端 A/B 数据隔离、Flutter 跨日串行更新、页面离开释放账户缓存均有自动化覆盖 |
+| 全中文 | 通过；错误、状态、行动、快捷入口和语义标签均为中文；计量单位保留标准缩写 |
+| 6px 圆角 | 通过；卡片、按钮、轮播、底部弹层及对话框统一，新增主题回归测试 |
+| 真实本地轮播图片 | 通过；3 张 1536×672 PNG 均随包本地加载并人工复核为写实健康餐食图片 |
+| 减少动画 | 通过；`MediaQuery.disableAnimations=true` 时 6 秒后仍停在首图，手动滑动保留，卸载无计时器异常 |
+| 大字体与窄屏 | 通过；320px、200% 字体 Widget 测试无溢出，核心区域可滚动访问 |
+
+### 9.3 最终命令结果
+
+| 检查 | 最终结果 |
+|---|---|
+| `backend\\mvnw.cmd test` | 通过，36 项，0 失败/错误/跳过 |
+| `dart format --output=none --set-exit-if-changed lib test` | 通过，36 个文件，0 个需修改 |
+| `flutter analyze` | 通过，0 issues |
+| `flutter test` | 通过，55 项 |
+| `flutter build apk --debug` | 通过；`mobile/build/app/outputs/flutter-apk/app-debug.apk`，206,966,311 B，SHA-256 `97445a5240d41b01e0199c9e6ae6977bb76a1208fafcc5e2ffbc0935649a6cbc` |
+| `scripts\\check.ps1` | 通过；内部后端 36 项全部通过，输出 `All project checks passed.` |
+| `git diff --check` | 通过 |
+| 敏感文件名、高置信凭据模式与跟踪构建产物扫描 | 通过；敏感文件名 0、高置信内容命中 0、跟踪构建产物 0；本地 `.env` 由 `.gitignore` 排除 |
+| `flutter devices` | 未发现 Android 模拟器/真机；仅 Windows、Chrome、Edge |
+
+非阻断环境提示：Flutter 报告 10 个受当前约束限制的较新依赖版本；Flyway 提示 H2 2.4.240 高于其已验证的 2.3.232；Gradle/JDK 报未来版本将限制未声明 native access。以上均未导致测试、分析或构建失败。
+
+### 9.4 放行结论
+
+自动化、静态检查、APK 构建、代码复核和资源人工检查全部通过，建议进入 Android 设备实测。由于当前没有 Android 模拟器或真机，游客、登录、建档、计划状态切换、刷新与触控轮播的设备实测明确标记为 **设备待测**；在设备实测完成前不表述为真机验收通过。
+
+### 9.5 相对 `codex/today-qa@21dc288365dc722958f49c2f9142053e86edbfea` 的独立复核差异
+
+当前候选已纳入该提交的全部有效运行时修复：`autoDispose` 会话隔离、控制器销毁后的在途响应保护，以及可注入本地时钟。对比后的额外有效差异仅为：
+
+- 全局 `DialogTheme` 使用 6px 圆角，补齐风险提示等主要弹层的设计规格。
+- 增加 provider 自身“最后一个观察者离开即释放缓存”的生命周期测试，与账户切换 Widget 测试形成两层证据。
+- 增加 6px 对话框主题回归测试。
+
+除上述 3 项外，当前 `mobile` 运行时代码与 `21dc288365dc722958f49c2f9142053e86edbfea` 一致；差异统计为 1 个运行时主题文件新增 3 行、2 个测试文件新增 33 行。最终 Flutter 全量测试因此由对方的 53 项增加为 55 项。
