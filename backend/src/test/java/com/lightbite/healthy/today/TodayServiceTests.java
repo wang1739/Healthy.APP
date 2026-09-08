@@ -3,9 +3,14 @@ package com.lightbite.healthy.today;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 
 import com.lightbite.healthy.plan.PlanDtos;
 import com.lightbite.healthy.plan.PlanService;
+import com.lightbite.healthy.hydration.HydrationDtos;
+import com.lightbite.healthy.hydration.HydrationService;
 import com.lightbite.healthy.nutrition.NutritionDtos;
 import com.lightbite.healthy.nutrition.NutritionService;
 import com.lightbite.healthy.profile.ProfileDtos;
@@ -23,16 +28,18 @@ class TodayServiceTests {
     private final PlanService plans = mock(PlanService.class);
     private final ProfileService profiles = mock(ProfileService.class);
     private final NutritionService nutrition = mock(NutritionService.class);
+    private final HydrationService hydration = mock(HydrationService.class);
     private TodayService service;
 
     @BeforeEach
     void setUp() {
-        service = new TodayService(plans, profiles, nutrition);
+        service = new TodayService(plans, profiles, nutrition, hydration);
         when(profiles.completeness(USER_ID)).thenReturn(completeness(true, false));
         when(profiles.measurements(USER_ID)).thenReturn(List.of());
         when(plans.current(USER_ID)).thenReturn(current("EMPTY", null));
         when(nutrition.day(USER_ID, LocalDate.of(2026, 9, 8))).thenReturn(day("EMPTY", null));
         when(nutrition.day(USER_ID, LocalDate.now())).thenReturn(day("EMPTY", null));
+        when(hydration.day(eq(USER_ID), any(LocalDate.class), anyString())).thenReturn(hydrationDay("EMPTY", 0));
     }
 
     @Test
@@ -92,14 +99,46 @@ class TodayServiceTests {
     }
 
     @Test
-    void returnsEmptyNutritionWhileOtherFutureModulesStayComingSoon() {
+    void returnsEmptyNutritionAndHydrationWhileOtherFutureModulesStayComingSoon() {
         TodayDtos.TodayResponse response = service.get(USER_ID, LocalDate.now());
 
         assertThat(response.nutrition().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
-        assertThat(response.hydration().status()).isEqualTo(TodayDtos.ModuleStatus.COMING_SOON);
+        assertThat(response.hydration().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
         assertThat(response.activity().status()).isEqualTo(TodayDtos.ModuleStatus.COMING_SOON);
         assertThat(response.sleep().status()).isEqualTo(TodayDtos.ModuleStatus.COMING_SOON);
         assertThat(response.tasks().status()).isEqualTo(TodayDtos.ModuleStatus.COMING_SOON);
+    }
+
+    @Test
+    void mapsReadyHydrationAndContainsItsFailure() {
+        LocalDate date = LocalDate.of(2026, 9, 8);
+        when(hydration.day(eq(USER_ID), eq(date), anyString())).thenReturn(hydrationDay("READY", 750));
+
+        TodayDtos.TodayResponse ready = service.get(USER_ID, date);
+        assertThat(ready.hydration().status()).isEqualTo(TodayDtos.ModuleStatus.READY);
+        assertThat(ready.hydration().consumedMl()).isEqualTo(750);
+        assertThat(ready.hydration().targetMl()).isEqualTo(2000);
+        assertThat(ready.hydration().remainingMl()).isEqualTo(1250);
+        assertThat(ready.hydration().progress()).isEqualByComparingTo("0.3750");
+
+        when(hydration.day(eq(USER_ID), eq(date), anyString())).thenThrow(new IllegalStateException("sql detail"));
+        TodayDtos.TodayResponse failed = service.get(USER_ID, date);
+        assertThat(failed.hydration().status()).isEqualTo(TodayDtos.ModuleStatus.ERROR);
+        assertThat(failed.hydration().message()).doesNotContain("sql detail");
+        assertThat(failed.plan().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
+        assertThat(failed.nutrition().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
+    }
+
+    @Test
+    void hidesHydrationWhenProfileIsIncomplete() {
+        when(profiles.completeness(USER_ID)).thenReturn(completeness(false, false));
+        when(hydration.day(eq(USER_ID), any(LocalDate.class), anyString())).thenReturn(hydrationDay("READY", 750));
+
+        TodayDtos.TodayResponse response = service.get(USER_ID, LocalDate.of(2026, 9, 8));
+
+        assertThat(response.hydration().status()).isEqualTo(TodayDtos.ModuleStatus.PROFILE_INCOMPLETE);
+        assertThat(response.hydration().consumedMl()).isNull();
+        assertThat(response.hydration().targetMl()).isNull();
     }
 
     @Test
@@ -171,5 +210,13 @@ class TodayServiceTests {
         return new NutritionDtos.DayResponse(LocalDate.of(2026, 9, 8), status, List.of(),
                 new NutritionDtos.Nutrients(new BigDecimal("321"), new BigDecimal("20.5"),
                         new BigDecimal("30.4"), new BigDecimal("8.1")), target);
+    }
+
+    private HydrationDtos.DayResponse hydrationDay(String status, int total) {
+        var settings = new HydrationDtos.SettingsResponse(null, 2000, 250, false,
+                "08:00", "22:00", 120, null, null, "DEFAULT", null, null, false, 0);
+        return new HydrationDtos.DayResponse(LocalDate.of(2026, 9, 8), status, List.of(), total,
+                2000, Math.max(0, 2000 - total), new BigDecimal(total).divide(new BigDecimal("2000")),
+                "DEFAULT", settings);
     }
 }

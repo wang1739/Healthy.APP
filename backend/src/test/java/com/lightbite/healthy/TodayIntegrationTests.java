@@ -33,6 +33,8 @@ class TodayIntegrationTests {
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.webAppContextSetup(applicationContext).apply(springSecurity()).build();
+        jdbc.update("DELETE FROM hydration_entries");
+        jdbc.update("DELETE FROM hydration_settings");
         jdbc.update("DELETE FROM meal_entries");
         jdbc.update("DELETE FROM health_plan_versions");
         jdbc.update("DELETE FROM health_plans");
@@ -69,11 +71,31 @@ class TodayIntegrationTests {
                 .andExpect(jsonPath("$.nutrition.status").value("EMPTY"))
                 .andExpect(jsonPath("$.nutrition.consumedKcal").value(0))
                 .andExpect(jsonPath("$.nutrition.targetKcal").doesNotExist())
+                .andExpect(jsonPath("$.hydration.status").value("EMPTY"))
+                .andExpect(jsonPath("$.hydration.consumedMl").value(0))
+                .andExpect(jsonPath("$.hydration.targetMl").value(2000))
                 .andExpect(jsonPath("$.nextAction.type").value("CREATE_PLAN"));
 
         mockMvc.perform(get("/api/v1/today?date=2026-09-08").with(user(USER_B)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.weight.valueKg").value(78.4));
+    }
+
+    @Test
+    void returnsRealHydrationSummary() throws Exception {
+        jdbc.update("""
+                INSERT INTO hydration_entries
+                (id,user_id,amount_ml,occurred_at,timezone,source,idempotency_key)
+                VALUES ('today-water',?,750,'2026-09-08 08:00:00','Asia/Shanghai','QUICK','today-water-key')
+                """, USER_A);
+
+        mockMvc.perform(get("/api/v1/today?date=2026-09-08").with(user(USER_A)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hydration.status").value("READY"))
+                .andExpect(jsonPath("$.hydration.consumedMl").value(750))
+                .andExpect(jsonPath("$.hydration.targetMl").value(2000))
+                .andExpect(jsonPath("$.hydration.remainingMl").value(1250))
+                .andExpect(jsonPath("$.hydration.progress").value(0.375));
     }
 
     @Test
@@ -164,6 +186,8 @@ class TodayIntegrationTests {
                 .andExpect(jsonPath("$.plan.status").value("EMPTY"))
                 .andExpect(jsonPath("$.plan.state").value("PROFILE_INCOMPLETE"))
                 .andExpect(jsonPath("$.plan.targetKcal").doesNotExist())
+                .andExpect(jsonPath("$.hydration.status").value("PROFILE_INCOMPLETE"))
+                .andExpect(jsonPath("$.hydration.consumedMl").doesNotExist())
                 .andExpect(jsonPath("$.nextAction.type").value("COMPLETE_PROFILE"));
     }
 
