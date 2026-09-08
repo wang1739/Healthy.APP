@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:healthy/core/api/api_config.dart';
 import 'package:healthy/core/storage/token_store.dart';
 import 'package:healthy/features/nutrition/domain/nutrition_data.dart';
+import 'package:healthy/features/hydration/domain/hydration_data.dart';
 import 'package:healthy/features/today/domain/today_data.dart';
 
 class ApiClient {
@@ -170,6 +171,75 @@ class ApiClient {
 
   Future<NutritionDay> deleteNutritionEntry(String id) =>
       _nutritionRequest('DELETE', '/nutrition/entries/$id');
+
+  Future<HydrationDay> getHydrationDay(
+    DateTime date, {
+    required String timezone,
+  }) => _hydrationDayRequest(
+    'GET',
+    '/hydration/days/${formatLocalDate(date)}',
+    queryParameters: {'timezone': timezone},
+  );
+
+  Future<HydrationDay> addHydrationEntry(
+    Map<String, dynamic> data, {
+    required String idempotencyKey,
+  }) => _hydrationDayRequest(
+    'POST',
+    '/hydration/entries',
+    data: data,
+    headers: {'Idempotency-Key': idempotencyKey},
+  );
+
+  Future<HydrationDay> deleteHydrationEntry(
+    String id, {
+    required String timezone,
+  }) => _hydrationDayRequest(
+    'DELETE',
+    '/hydration/entries/$id',
+    queryParameters: {'timezone': timezone},
+  );
+
+  Future<HydrationSettings> getHydrationSettings() =>
+      _hydrationSettingsRequest('GET', '/hydration/settings');
+  Future<HydrationSettings> updateHydrationSettings(
+    Map<String, dynamic> data,
+  ) => _hydrationSettingsRequest('PUT', '/hydration/settings', data: data);
+  Future<HydrationSettings> adoptPlanHydrationTarget() =>
+      _hydrationSettingsRequest(
+        'POST',
+        '/hydration/settings/adopt-plan-target',
+      );
+
+  Future<HydrationDay> _hydrationDayRequest(
+    String method,
+    String path, {
+    Object? data,
+    Map<String, dynamic>? queryParameters,
+    Map<String, String>? headers,
+  }) async {
+    final response = await _authorized(
+      method,
+      path,
+      data: data,
+      queryParameters: queryParameters,
+      headers: headers,
+    );
+    return HydrationDay.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<HydrationSettings> _hydrationSettingsRequest(
+    String method,
+    String path, {
+    Object? data,
+  }) async {
+    final response = await _authorized(method, path, data: data);
+    return HydrationSettings.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
 
   Future<NutritionDay> _nutritionRequest(
     String method,

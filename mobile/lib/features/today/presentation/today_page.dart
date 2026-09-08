@@ -16,6 +16,7 @@ class TodayPage extends ConsumerStatefulWidget {
     required this.onProtectedAction,
     required this.onOpenPlan,
     this.onOpenNutrition,
+    this.onOpenHydration,
     this.now,
     super.key,
   });
@@ -25,6 +26,7 @@ class TodayPage extends ConsumerStatefulWidget {
   final ValueChanged<String> onProtectedAction;
   final VoidCallback onOpenPlan;
   final VoidCallback? onOpenNutrition;
+  final VoidCallback? onOpenHydration;
   final DateTime Function()? now;
 
   @override
@@ -343,7 +345,11 @@ class _TodayPageState extends ConsumerState<TodayPage>
         ),
         _moduleCard(
           '饮水',
-          data.plan.waterMl == null ? null : '${data.plan.waterMl} ml',
+          data.hydration.consumedMl == null
+              ? data.plan.waterMl == null
+                    ? null
+                    : '${data.plan.waterMl} ml'
+              : '${data.hydration.consumedMl} / ${data.hydration.targetMl} ml',
           data.hydration.status,
           Icons.water_drop_outlined,
           data.hydration.message,
@@ -508,6 +514,8 @@ class _TodayPageState extends ConsumerState<TodayPage>
   Widget _quickButton(String label, IconData icon) => OutlinedButton.icon(
     onPressed: label == '记录饮食' && widget.onOpenNutrition != null
         ? widget.onOpenNutrition
+        : label == '记录饮水' && widget.onOpenHydration != null
+        ? widget.onOpenHydration
         : () => widget.onProtectedAction(label),
     icon: Icon(icon),
     label: Text(label),
