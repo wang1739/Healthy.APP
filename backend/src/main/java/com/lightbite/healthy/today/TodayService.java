@@ -6,7 +6,10 @@ import com.lightbite.healthy.nutrition.NutritionDtos;
 import com.lightbite.healthy.nutrition.NutritionService;
 import com.lightbite.healthy.profile.ProfileDtos;
 import com.lightbite.healthy.profile.ProfileService;
+import com.lightbite.healthy.hydration.HydrationDtos;
+import com.lightbite.healthy.hydration.HydrationService;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import org.springframework.stereotype.Service;
 
@@ -20,11 +23,15 @@ public class TodayService {
     private final PlanService plans;
     private final ProfileService profiles;
     private final NutritionService nutrition;
+    private final HydrationService hydration;
 
-    public TodayService(PlanService plans, ProfileService profiles, NutritionService nutrition) {
+    public TodayService(
+            PlanService plans, ProfileService profiles, NutritionService nutrition, HydrationService hydration
+    ) {
         this.plans = plans;
         this.profiles = profiles;
         this.nutrition = nutrition;
+        this.hydration = hydration;
     }
 
     public TodayDtos.TodayResponse get(String userId, LocalDate date) {
@@ -34,9 +41,25 @@ public class TodayService {
             plan = hiddenPlan("PROFILE_INCOMPLETE");
         }
         TodayDtos.WeightModule weight = weight(userId);
+        TodayDtos.HydrationModule hydrationModule = profile != null && !profile.complete()
+                ? new TodayDtos.HydrationModule(TodayDtos.ModuleStatus.PROFILE_INCOMPLETE,
+                        null, null, null, null, "请先完成健康档案")
+                : hydration(userId, date);
         return new TodayDtos.TodayResponse(
-                date, plan, weight, nutrition(userId, date), COMING_SOON, COMING_SOON, COMING_SOON, COMING_SOON,
+                date, plan, weight, nutrition(userId, date), hydrationModule, COMING_SOON, COMING_SOON, COMING_SOON,
                 nextAction(profile, plan));
+    }
+
+    private TodayDtos.HydrationModule hydration(String userId, LocalDate date) {
+        try {
+            HydrationDtos.DayResponse day = hydration.day(userId, date, ZoneId.systemDefault().getId());
+            return new TodayDtos.HydrationModule(
+                    "EMPTY".equals(day.status()) ? TodayDtos.ModuleStatus.EMPTY : TodayDtos.ModuleStatus.READY,
+                    day.totalMl(), day.targetMl(), day.remainingMl(), day.progress(), null);
+        } catch (RuntimeException exception) {
+            return new TodayDtos.HydrationModule(
+                    TodayDtos.ModuleStatus.ERROR, null, null, null, null, LOAD_ERROR);
+        }
     }
 
     private TodayDtos.NutritionModule nutrition(String userId, LocalDate date) {
