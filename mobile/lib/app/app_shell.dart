@@ -49,6 +49,7 @@ class _AppShellState extends State<AppShell> {
   int _index = 0;
   bool _hovered = false;
   bool _pinned = false;
+  bool _autoPreview = false;
 
   @override
   void initState() {
@@ -57,6 +58,7 @@ class _AppShellState extends State<AppShell> {
     final pending = widget.session.consumePendingFeature();
     if (pending != null) {
       _index = pending.destination;
+      _autoPreview = pending.destination == 2;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           ScaffoldMessenger.of(
@@ -170,9 +172,22 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final pages = [
-      TodayPage(onProtectedAction: (label) => _requestFeature(label, 0)),
+      TodayPage(
+        api: widget.session.api,
+        access: widget.session.access,
+        onProtectedAction: (label) => _requestFeature(label, 0),
+        onOpenPlan: () => setState(() => _index = 2),
+      ),
       NutritionPage(onProtectedAction: (label) => _requestFeature(label, 1)),
-      PlanPage(onProtectedAction: (label) => _requestFeature(label, 2)),
+      PlanPage(
+        api: widget.session.api,
+        access: widget.session.access,
+        riskBlocked: widget.session.riskBlocked,
+        autoPreview: _autoPreview,
+        onProtectedAction: (label) => _requestFeature(label, 2),
+        onConfirmed: () => setState(() => _index = 0),
+        onEditProfile: widget.session.openProfile,
+      ),
       ReportPage(onProtectedAction: (label) => _requestFeature(label, 3)),
       AccountPage(session: widget.session),
     ];

@@ -106,6 +106,52 @@ class ApiClient {
     return Map<String, dynamic>.from(response.data as Map);
   }
 
+  Future<Map<String, dynamic>> previewPlan() =>
+      _planRequest('POST', '/plans/preview');
+
+  Future<Map<String, dynamic>> createPlan({
+    Map<String, dynamic>? adjustments,
+  }) => _planRequest('POST', '/plans', data: adjustments ?? const {});
+
+  Future<Map<String, dynamic>> getCurrentPlan() =>
+      _planRequest('GET', '/plans/current');
+
+  Future<List<Map<String, dynamic>>> getPlanHistory() async {
+    final response = await _authorized('GET', '/plans/history');
+    final data = response.data;
+    final items = data is List ? data : (data as Map?)?['items'] as List? ?? [];
+    return items.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+  }
+
+  Future<Map<String, dynamic>> recalculatePlan(
+    String id, {
+    required int expectedVersion,
+  }) => _planRequest(
+    'POST',
+    '/plans/$id/recalculate',
+    data: {'expectedVersion': expectedVersion},
+  );
+
+  Future<Map<String, dynamic>> updatePlanTargets(
+    String id,
+    Map<String, dynamic> targets,
+  ) => _planRequest('PUT', '/plans/$id/targets', data: targets);
+
+  Future<Map<String, dynamic>> pausePlan(String id) =>
+      _planRequest('POST', '/plans/$id/pause');
+
+  Future<Map<String, dynamic>> resumePlan(String id) =>
+      _planRequest('POST', '/plans/$id/resume');
+
+  Future<Map<String, dynamic>> _planRequest(
+    String method,
+    String path, {
+    Object? data,
+  }) async {
+    final response = await _authorized(method, path, data: data);
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
   Future<void> logout({bool allDevices = false}) async {
     try {
       if (_accessToken != null) {
@@ -183,6 +229,13 @@ class ApiClient {
       return (error.response!.data as Map)['message']?.toString() ?? '请求失败';
     }
     return '网络连接失败，请稍后重试';
+  }
+
+  static String? errorCode(Object error) {
+    if (error is DioException && error.response?.data is Map) {
+      return (error.response!.data as Map)['code']?.toString();
+    }
+    return null;
   }
 }
 

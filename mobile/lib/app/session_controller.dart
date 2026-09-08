@@ -107,7 +107,11 @@ class SessionController extends ChangeNotifier {
     access = UserAccess.profileComplete;
     profileStep = 7;
     riskBlocked = blocked;
-    if (blocked) _pendingFeature = null;
+    if (blocked) {
+      _pendingFeature = null;
+    } else {
+      _pendingFeature ??= const PendingFeature(label: '查看减脂方案', destination: 2);
+    }
     stage = AppStage.home;
     notifyListeners();
   }
