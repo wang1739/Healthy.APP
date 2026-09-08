@@ -48,7 +48,7 @@ void main() {
     await session.skipLogin();
   });
 
-  testWidgets('shows five destinations and switches pages', (tester) async {
+  testWidgets('shows six destinations and switches pages', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -64,7 +64,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    for (final label in ['今日', '饮食', '计划', '报告', '我的']) {
+    for (final label in ['今日', '饮食', '计划', '报告', '我的', '饮水']) {
       expect(find.text(label), findsOneWidget);
     }
     expect(find.text('今日概览'), findsOneWidget);

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:healthy/app/session_controller.dart';
 import 'package:healthy/features/account/presentation/account_page.dart';
 import 'package:healthy/features/nutrition/presentation/nutrition_page.dart';
+import 'package:healthy/features/hydration/presentation/hydration_page.dart';
+import 'package:healthy/features/hydration/application/hydration_reminder_scheduler.dart';
 import 'package:healthy/features/plan/presentation/plan_page.dart';
 import 'package:healthy/features/report/presentation/report_page.dart';
 import 'package:healthy/features/today/presentation/today_page.dart';
@@ -44,6 +46,11 @@ class _AppShellState extends State<AppShell> {
       selectedIcon: Icon(Icons.person),
       label: '我的',
     ),
+    NavigationDestination(
+      icon: Icon(Icons.water_drop_outlined),
+      selectedIcon: Icon(Icons.water_drop),
+      label: '饮水',
+    ),
   ];
 
   int _index = 0;
@@ -55,6 +62,8 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     widget.session.addListener(_sessionChanged);
+    HydrationReminderScheduler.openHydration.addListener(_openHydration);
+    if (HydrationReminderScheduler.openHydration.value > 0) _index = 5;
     final pending = widget.session.consumePendingFeature();
     if (pending != null) {
       _index = pending.destination;
@@ -74,9 +83,14 @@ class _AppShellState extends State<AppShell> {
     if (mounted) setState(() {});
   }
 
+  void _openHydration() {
+    if (mounted) setState(() => _index = 5);
+  }
+
   @override
   void dispose() {
     widget.session.removeListener(_sessionChanged);
+    HydrationReminderScheduler.openHydration.removeListener(_openHydration);
     super.dispose();
   }
 
@@ -183,6 +197,7 @@ class _AppShellState extends State<AppShell> {
         onProtectedAction: (label) => _requestFeature(label, 0),
         onOpenPlan: () => setState(() => _index = 2),
         onOpenNutrition: () => setState(() => _index = 1),
+        onOpenHydration: () => setState(() => _index = 5),
       ),
       NutritionPage(
         api: widget.session.api,
@@ -203,6 +218,12 @@ class _AppShellState extends State<AppShell> {
       ),
       ReportPage(onProtectedAction: (label) => _requestFeature(label, 3)),
       AccountPage(session: widget.session),
+      HydrationPage(
+        api: widget.session.api,
+        access: widget.session.access,
+        sessionKey: widget.session.sessionRevision.toString(),
+        onProtectedAction: (label) => _requestFeature(label, 5),
+      ),
     ];
     final wide = MediaQuery.sizeOf(context).width >= 900;
     final content = IndexedStack(index: _index, children: pages);

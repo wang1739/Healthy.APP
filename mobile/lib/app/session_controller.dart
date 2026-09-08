@@ -14,11 +14,12 @@ class PendingFeature {
 }
 
 class SessionController extends ChangeNotifier {
-  SessionController(this.api);
+  SessionController(this.api, {this.onLogout});
 
   static const _guestBrowseKey = 'guest_browse_enabled';
 
   final ApiClient api;
+  final Future<void> Function()? onLogout;
   AppStage stage = AppStage.loading;
   UserAccess access = UserAccess.guest;
   int profileStep = 0;
@@ -126,6 +127,11 @@ class SessionController extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    try {
+      await onLogout?.call();
+    } catch (_) {
+      // Local notification cleanup must not trap the user in a session.
+    }
     await api.logout();
     sessionRevision++;
     final preferences = await SharedPreferences.getInstance();

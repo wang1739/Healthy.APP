@@ -150,6 +150,10 @@ class TodayModuleData {
     this.proteinG,
     this.carbsG,
     this.fatG,
+    this.consumedMl,
+    this.targetMl,
+    this.remainingMl,
+    this.progress,
   });
 
   factory TodayModuleData.fromJson(Map<String, dynamic> json) =>
@@ -161,6 +165,10 @@ class TodayModuleData {
         proteinG: (json['proteinG'] as num?)?.toDouble(),
         carbsG: (json['carbsG'] as num?)?.toDouble(),
         fatG: (json['fatG'] as num?)?.toDouble(),
+        consumedMl: (json['consumedMl'] as num?)?.toInt(),
+        targetMl: (json['targetMl'] as num?)?.toInt(),
+        remainingMl: (json['remainingMl'] as num?)?.toInt(),
+        progress: (json['progress'] as num?)?.toDouble(),
       );
 
   final TodayModuleStatus status;
@@ -170,6 +178,10 @@ class TodayModuleData {
   final double? proteinG;
   final double? carbsG;
   final double? fatG;
+  final int? consumedMl;
+  final int? targetMl;
+  final int? remainingMl;
+  final double? progress;
 }
 
 class TodayNextAction {
