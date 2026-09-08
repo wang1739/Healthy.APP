@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:healthy/core/api/api_config.dart';
 import 'package:healthy/core/storage/token_store.dart';
+import 'package:healthy/features/today/domain/today_data.dart';
 
 class ApiClient {
   ApiClient({Dio? dio, TokenStore? tokenStore})
@@ -106,6 +107,15 @@ class ApiClient {
     return Map<String, dynamic>.from(response.data as Map);
   }
 
+  Future<TodayData> getToday(DateTime date) async {
+    final response = await _authorized(
+      'GET',
+      '/today',
+      queryParameters: {'date': formatLocalDate(date)},
+    );
+    return TodayData.fromJson(Map<String, dynamic>.from(response.data as Map));
+  }
+
   Future<Map<String, dynamic>> previewPlan() =>
       _planRequest('POST', '/plans/preview');
 
@@ -171,11 +181,13 @@ class ApiClient {
     String method,
     String path, {
     Object? data,
+    Map<String, dynamic>? queryParameters,
   }) async {
     try {
       return await _dio.request<dynamic>(
         path,
         data: data,
+        queryParameters: queryParameters,
         options: Options(method: method, headers: _authHeaders),
       );
     } on DioException catch (error) {
@@ -183,6 +195,7 @@ class ApiClient {
       return _dio.request<dynamic>(
         path,
         data: data,
+        queryParameters: queryParameters,
         options: Options(method: method, headers: _authHeaders),
       );
     }
