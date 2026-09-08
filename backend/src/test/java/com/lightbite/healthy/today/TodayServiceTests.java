@@ -76,6 +76,17 @@ class TodayServiceTests {
     }
 
     @Test
+    void reportsBothModulesWhenBothSourcesFail() {
+        when(plans.current(USER_ID)).thenThrow(new IllegalStateException("plan"));
+        when(profiles.measurements(USER_ID)).thenThrow(new IllegalStateException("weight"));
+
+        TodayDtos.TodayResponse response = service.get(USER_ID, LocalDate.now());
+
+        assertThat(response.plan().status()).isEqualTo(TodayDtos.ModuleStatus.ERROR);
+        assertThat(response.weight().status()).isEqualTo(TodayDtos.ModuleStatus.ERROR);
+    }
+
+    @Test
     void marksFutureRecordModulesAsComingSoon() {
         TodayDtos.TodayResponse response = service.get(USER_ID, LocalDate.now());
 
@@ -89,7 +100,11 @@ class TodayServiceTests {
     @Test
     void choosesNextActionFromProfileAndPlanState() {
         when(profiles.completeness(USER_ID)).thenReturn(completeness(false, false));
-        assertThat(service.get(USER_ID, LocalDate.now()).nextAction().type()).isEqualTo("COMPLETE_PROFILE");
+        when(plans.current(USER_ID)).thenReturn(current("ACTIVE", result()));
+        TodayDtos.TodayResponse incomplete = service.get(USER_ID, LocalDate.now());
+        assertThat(incomplete.nextAction().type()).isEqualTo("COMPLETE_PROFILE");
+        assertThat(incomplete.plan().state()).isEqualTo("PROFILE_INCOMPLETE");
+        assertThat(incomplete.plan().targetKcal()).isNull();
 
         when(profiles.completeness(USER_ID)).thenReturn(completeness(true, true));
         TodayDtos.TodayResponse blocked = service.get(USER_ID, LocalDate.now());

@@ -26,6 +26,9 @@ public class TodayService {
     public TodayDtos.TodayResponse get(String userId, LocalDate date) {
         ProfileDtos.CompletenessResponse profile = profile(userId);
         TodayDtos.PlanModule plan = plan(userId);
+        if (profile != null && !profile.complete()) {
+            plan = hiddenPlan("PROFILE_INCOMPLETE");
+        }
         TodayDtos.WeightModule weight = weight(userId);
         return new TodayDtos.TodayResponse(
                 date, plan, weight, COMING_SOON, COMING_SOON, COMING_SOON, COMING_SOON, COMING_SOON,
@@ -72,6 +75,11 @@ public class TodayService {
         } catch (RuntimeException exception) {
             return new TodayDtos.WeightModule(TodayDtos.ModuleStatus.ERROR, null, null, LOAD_ERROR);
         }
+    }
+
+    private TodayDtos.PlanModule hiddenPlan(String state) {
+        return new TodayDtos.PlanModule(TodayDtos.ModuleStatus.EMPTY, state, null,
+                null, null, null, null, null, null, null, null, null);
     }
 
     private TodayDtos.NextAction nextAction(
