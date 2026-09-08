@@ -1,0 +1,103 @@
+package com.lightbite.healthy.today;
+
+import com.lightbite.healthy.plan.PlanDtos;
+import com.lightbite.healthy.plan.PlanService;
+import com.lightbite.healthy.profile.ProfileDtos;
+import com.lightbite.healthy.profile.ProfileService;
+import java.time.LocalDate;
+import java.util.List;
+import org.springframework.stereotype.Service;
+
+@Service
+public class TodayService {
+
+    private static final String LOAD_ERROR = "该项数据暂时无法加载";
+    private static final TodayDtos.Module COMING_SOON =
+            new TodayDtos.Module(TodayDtos.ModuleStatus.COMING_SOON, "记录功能待接入");
+
+    private final PlanService plans;
+    private final ProfileService profiles;
+
+    public TodayService(PlanService plans, ProfileService profiles) {
+        this.plans = plans;
+        this.profiles = profiles;
+    }
+
+    public TodayDtos.TodayResponse get(String userId, LocalDate date) {
+        ProfileDtos.CompletenessResponse profile = profile(userId);
+        TodayDtos.PlanModule plan = plan(userId);
+        if (profile != null && !profile.complete()) {
+            plan = hiddenPlan("PROFILE_INCOMPLETE");
+        }
+        TodayDtos.WeightModule weight = weight(userId);
+        return new TodayDtos.TodayResponse(
+                date, plan, weight, COMING_SOON, COMING_SOON, COMING_SOON, COMING_SOON, COMING_SOON,
+                nextAction(profile, plan));
+    }
+
+    private ProfileDtos.CompletenessResponse profile(String userId) {
+        try {
+            return profiles.completeness(userId);
+        } catch (RuntimeException exception) {
+            return null;
+        }
+    }
+
+    private TodayDtos.PlanModule plan(String userId) {
+        try {
+            PlanDtos.CurrentResponse current = plans.current(userId);
+            PlanDtos.PlanResultResponse target = current.plan();
+            if (target == null) {
+                TodayDtos.ModuleStatus status = "EMPTY".equals(current.state())
+                        ? TodayDtos.ModuleStatus.EMPTY : TodayDtos.ModuleStatus.READY;
+                return new TodayDtos.PlanModule(status, current.state(), current.currentWeek(),
+                        null, null, null, null, null, null, null, null, null);
+            }
+            return new TodayDtos.PlanModule(
+                    TodayDtos.ModuleStatus.READY, current.state(), current.currentWeek(), target.targetKcal(),
+                    target.proteinG(), target.carbsG(), target.fatG(), target.waterMl(), target.exerciseDays(),
+                    target.exerciseMinutes(), target.sleepHours(), null);
+        } catch (RuntimeException exception) {
+            return new TodayDtos.PlanModule(TodayDtos.ModuleStatus.ERROR, "ERROR", null,
+                    null, null, null, null, null, null, null, null, LOAD_ERROR);
+        }
+    }
+
+    private TodayDtos.WeightModule weight(String userId) {
+        try {
+            List<ProfileDtos.MeasurementResponse> values = profiles.measurements(userId);
+            if (values.isEmpty()) {
+                return new TodayDtos.WeightModule(TodayDtos.ModuleStatus.EMPTY, null, null, null);
+            }
+            ProfileDtos.MeasurementResponse latest = values.get(0);
+            return new TodayDtos.WeightModule(
+                    TodayDtos.ModuleStatus.READY, latest.weightKg(), latest.measuredAt(), null);
+        } catch (RuntimeException exception) {
+            return new TodayDtos.WeightModule(TodayDtos.ModuleStatus.ERROR, null, null, LOAD_ERROR);
+        }
+    }
+
+    private TodayDtos.PlanModule hiddenPlan(String state) {
+        return new TodayDtos.PlanModule(TodayDtos.ModuleStatus.EMPTY, state, null,
+                null, null, null, null, null, null, null, null, null);
+    }
+
+    private TodayDtos.NextAction nextAction(
+            ProfileDtos.CompletenessResponse profile,
+            TodayDtos.PlanModule plan
+    ) {
+        if (profile != null && !profile.complete()) {
+            return new TodayDtos.NextAction("COMPLETE_PROFILE", "完善健康档案");
+        }
+        if ((profile != null && profile.riskBlocked()) || "RISK_BLOCKED".equals(plan.state())) {
+            return new TodayDtos.NextAction("VIEW_RISK_GUIDANCE", "查看健康建议");
+        }
+        if ("PAUSED".equals(plan.state())) {
+            return new TodayDtos.NextAction("RESUME_PLAN", "查看暂停的计划");
+        }
+        if (plan.status() == TodayDtos.ModuleStatus.EMPTY) {
+            return new TodayDtos.NextAction("CREATE_PLAN", "生成减脂计划");
+        }
+        return new TodayDtos.NextAction("VIEW_PLAN", "查看今日目标");
+    }
+}
