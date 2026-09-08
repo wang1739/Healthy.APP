@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:healthy/core/api/api_client.dart';
 import 'package:healthy/features/today/application/today_controller.dart';
@@ -110,5 +111,25 @@ void main() {
 
     expect(api.calls, 2);
     expect(controller.state.data?.date, DateTime(2026, 9, 9));
+  });
+
+  test('页面离开后释放缓存，避免换号复用前一用户数据', () async {
+    final api = _FakeApi();
+    final container = ProviderContainer();
+    final subscription = container.listen(
+      todayControllerProvider(api),
+      (_, _) {},
+      fireImmediately: true,
+    );
+    await container
+        .read(todayControllerProvider(api))
+        .load(DateTime(2026, 9, 8));
+    expect(container.read(todayControllerProvider(api)).state.data, isNotNull);
+
+    subscription.close();
+    await container.pump();
+
+    expect(container.read(todayControllerProvider(api)).state.data, isNull);
+    container.dispose();
   });
 }

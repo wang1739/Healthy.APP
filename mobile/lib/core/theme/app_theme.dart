@@ -19,6 +19,9 @@ abstract final class AppTheme {
         borderRadius: BorderRadius.circular(6),
       ),
     ),
+    dialogTheme: DialogThemeData(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+    ),
     navigationBarTheme: NavigationBarThemeData(
       backgroundColor: Colors.white,
       indicatorColor: AppColors.mint,

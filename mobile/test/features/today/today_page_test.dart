@@ -255,4 +255,16 @@ void main() {
     expect(find.text('快捷操作'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('主要弹层使用 6px 圆角', (tester) async {
+    await _pumpPage(
+      tester,
+      _FakeApi(overview(planState: 'RISK_BLOCKED')),
+      UserAccess.profileComplete,
+    );
+
+    final theme = Theme.of(tester.element(find.byType(TodayPage)));
+    final shape = theme.dialogTheme.shape! as RoundedRectangleBorder;
+    expect(shape.borderRadius, BorderRadius.circular(6));
+  });
 }

@@ -74,7 +74,5 @@ class TodayController extends ChangeNotifier {
   }
 }
 
-final todayControllerProvider =
-    ChangeNotifierProvider.family<TodayController, ApiClient>(
-      (ref, api) => TodayController(api),
-    );
+final todayControllerProvider = ChangeNotifierProvider.autoDispose
+    .family<TodayController, ApiClient>((ref, api) => TodayController(api));
