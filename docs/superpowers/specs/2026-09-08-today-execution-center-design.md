@@ -157,6 +157,10 @@ Authorization: Bearer <access-token>
 
 后续记录模块接入后，可以在保持这些基础状态的前提下增加真正的数据驱动建议。
 
+计划预览目前只保存在 Flutter 的 `PlanController` 内存中，不写入数据库。因此
+`CONFIRM_PLAN` 由客户端在仍持有预览时覆盖显示；后端聚合接口不持久化或猜测待确认状态。
+今日页展示的目标数值仍只使用聚合接口中的已生效计划数据。
+
 ## 8. Flutter 数据流
 
 1. “今日”页根据会话状态决定是否请求私人接口。
@@ -218,4 +222,3 @@ Authorization: Bearer <access-token>
 3. Flutter 首页布局、轮播、状态卡片、刷新和跳转。
 4. Widget 测试、静态检查、后端回归和 APK 构建。
 5. 集成自检、验收文档、提交并推送私有 GitHub 仓库。
-
