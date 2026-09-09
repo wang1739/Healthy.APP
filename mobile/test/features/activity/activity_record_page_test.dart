@@ -57,9 +57,32 @@ class _RecordApi extends ApiClient {
       }),
     );
   }
+
+  @override
+  Future<ActivityWriteResult> updateActivityRecord(
+    String id,
+    Map<String, dynamic> data,
+  ) async {
+    body = data;
+    return ActivityWriteResult(
+      day: ActivityDay.fromJson({
+        'date': '2026-09-09',
+        'weightKg': 60,
+        'records': const [],
+      }),
+      week: ActivityWeek.fromJson({
+        'weekStart': '2026-09-07',
+        'weekEnd': '2026-09-13',
+        'planStatus': 'NO_PLAN',
+      }),
+    );
+  }
 }
 
-Future<(_RecordApi, ActivityController)> _pump(WidgetTester tester) async {
+Future<(_RecordApi, ActivityController)> _pump(
+  WidgetTester tester, {
+  ActivityRecord? initialRecord,
+}) async {
   await tester.binding.setSurfaceSize(const Size(800, 1200));
   final api = _RecordApi();
   final controller = ActivityController(
@@ -81,6 +104,7 @@ Future<(_RecordApi, ActivityController)> _pump(WidgetTester tester) async {
       home: ActivityRecordPage(
         controller: controller,
         selectedDate: DateTime(2026, 9, 9),
+        initialRecord: initialRecord,
         now: () => DateTime(2026, 9, 9, 10),
       ),
     ),
@@ -138,6 +162,43 @@ void main() {
     expect(api.body?['intensity'], 'MEDIUM');
     expect(api.body?['durationMinutes'], 30);
     expect(api.body?['finalKcal'], isNull);
+    expect(api.body?['calorieMode'], 'ESTIMATED');
+  });
+
+  testWidgets('手动热量使用明确覆盖语义', (tester) async {
+    final (api, _) = await _pump(tester);
+    await tester.tap(find.text('跑步'));
+    await tester.ensureVisible(find.text('修改消耗热量'));
+    await tester.tap(find.text('修改消耗热量'));
+    await tester.pump();
+    await tester.enterText(find.byKey(const Key('activity-calories')), '200');
+    await tester.tap(find.byKey(const Key('activity-save')));
+    await tester.pumpAndSettle();
+    expect(api.body?['finalKcal'], 200);
+    expect(api.body?['calorieMode'], 'USER_OVERRIDE');
+  });
+
+  testWidgets('恢复估算值使用明确恢复语义', (tester) async {
+    final (api, _) = await _pump(
+      tester,
+      initialRecord: ActivityRecord.fromJson({
+        'id': 'r1',
+        'activityTypeId': 'running',
+        'activityName': '跑步',
+        'intensity': 'MEDIUM',
+        'durationMinutes': 30,
+        'occurredAt': '2026-09-09T09:00:00+08:00',
+        'estimatedKcal': 180,
+        'finalKcal': 200,
+        'calorieSource': 'USER_OVERRIDE',
+      }),
+    );
+    await tester.ensureVisible(find.text('恢复估算值'));
+    await tester.tap(find.text('恢复估算值'));
+    await tester.tap(find.byKey(const Key('activity-save')));
+    await tester.pumpAndSettle();
+    expect(api.body?['finalKcal'], isNull);
+    expect(api.body?['calorieMode'], 'RESTORE_ESTIMATED');
   });
 
   testWidgets('可创建自定义运动并立即选择', (tester) async {

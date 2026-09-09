@@ -15,7 +15,15 @@ void main() {
       'records': [
         {
           'id': 'r1',
-          'activityTypeId': 'running',
+          'activityType': {
+            'id': 'running',
+            'name': '跑步',
+            'category': 'CARDIO',
+            'typeScope': 'SYSTEM',
+            'lowMet': 4,
+            'mediumMet': 6,
+            'highMet': 8,
+          },
           'activityName': '跑步',
           'intensity': 'MEDIUM',
           'durationMinutes': 30,
@@ -51,6 +59,7 @@ void main() {
     });
 
     expect(type.metFor(ActivityIntensity.high), 8);
+    expect(day.records.single.activityTypeId, 'running');
     expect(day.records.single.calorieSource, CalorieSource.userOverride);
     expect(day.totalDurationMinutes, 30);
     expect(week.targetDurationMinutes, 150);

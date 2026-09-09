@@ -27,6 +27,7 @@ class _ActivityRecordPageState extends State<ActivityRecordPage> {
   ActivityIntensity _intensity = ActivityIntensity.medium;
   late DateTime _occurredAt;
   bool _manualCalories = false;
+  bool _restoreEstimate = false;
   String? _error;
 
   DateTime get _now => widget.now?.call() ?? DateTime.now();
@@ -198,6 +199,7 @@ class _ActivityRecordPageState extends State<ActivityRecordPage> {
                 child: TextButton(
                   onPressed: () => setState(() {
                     _manualCalories = true;
+                    _restoreEstimate = false;
                     if (_estimate != null) _calories.text = '$_estimate';
                   }),
                   child: const Text('修改消耗热量'),
@@ -217,6 +219,7 @@ class _ActivityRecordPageState extends State<ActivityRecordPage> {
                 child: TextButton(
                   onPressed: () => setState(() {
                     _manualCalories = false;
+                    _restoreEstimate = true;
                     _calories.clear();
                   }),
                   child: const Text('恢复估算值'),
@@ -358,6 +361,11 @@ class _ActivityRecordPageState extends State<ActivityRecordPage> {
       'intensity': _intensity.wireName,
       'durationMinutes': duration,
       'occurredAt': _occurredAt.toUtc().toIso8601String(),
+      'calorieMode': _manualCalories
+          ? 'USER_OVERRIDE'
+          : _restoreEstimate
+          ? 'RESTORE_ESTIMATED'
+          : 'ESTIMATED',
       if (_manualCalories) 'finalKcal': calories,
     };
     await widget.controller.save(payload, recordId: widget.initialRecord?.id);

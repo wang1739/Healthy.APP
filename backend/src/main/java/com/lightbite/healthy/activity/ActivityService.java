@@ -99,8 +99,9 @@ public class ActivityService {
         if (date == null) throw invalid("INVALID_DATE", "date", "请选择日期");
         ZoneId zone = zone(timezone);
         if (!hasCompleteProfile(userId)) {
-            return new ActivityDtos.DayResponse(date, "PROFILE_INCOMPLETE", List.of(), 0, 0, 0, "0");
+            return new ActivityDtos.DayResponse(date, "PROFILE_INCOMPLETE", List.of(), 0, 0, 0, null, "0");
         }
+        BigDecimal weight = latestWeight(userId);
         Instant start = date.atStartOfDay(zone).toInstant();
         Instant end = date.plusDays(1).atStartOfDay(zone).toInstant();
         List<ActivityDtos.RecordResponse> records = records(userId, start, end);
@@ -108,7 +109,7 @@ public class ActivityService {
         int kcal = records.stream().mapToInt(ActivityDtos.RecordResponse::finalKcal).sum();
         String version = records.isEmpty() ? "0" : latestUpdate(userId, start, end).toString();
         return new ActivityDtos.DayResponse(date, records.isEmpty() ? "EMPTY" : "READY", records,
-                records.size(), minutes, kcal, version);
+                records.size(), minutes, kcal, weight, version);
     }
 
     public ActivityDtos.WeekResponse week(String userId, LocalDate date, String timezone) {

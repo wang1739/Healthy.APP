@@ -156,6 +156,7 @@ class ActivityIntegrationTests {
         mockMvc.perform(get("/api/v1/activity/days/2026-09-07")
                         .param("timezone", "Asia/Shanghai").with(user(USER_A)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.recordCount").value(2))
+                .andExpect(jsonPath("$.weightKg").value(60))
                 .andExpect(jsonPath("$.totalDurationMinutes").value(75));
         mockMvc.perform(get("/api/v1/activity/weeks/2026-09-07")
                         .param("timezone", "+08:00").with(user(USER_A)))

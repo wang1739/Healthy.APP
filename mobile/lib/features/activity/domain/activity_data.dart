@@ -102,7 +102,11 @@ class ActivityRecord {
   factory ActivityRecord.fromJson(Map<String, dynamic> json) => ActivityRecord(
     id: json['id']?.toString() ?? '',
     activityTypeId:
-        (json['activityTypeId'] ?? json['typeId'])?.toString() ?? '',
+        (json['activityTypeId'] ??
+                json['typeId'] ??
+                _map(json['activityType'])['id'])
+            ?.toString() ??
+        '',
     activityName:
         (json['activityNameSnapshot'] ?? json['activityName'] ?? json['name'])
             ?.toString() ??

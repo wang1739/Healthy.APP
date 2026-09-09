@@ -57,6 +57,7 @@ public final class ActivityDtos {
             int recordCount,
             int totalDurationMinutes,
             int totalKcal,
+            BigDecimal weightKg,
             String cacheVersion
     ) {
     }

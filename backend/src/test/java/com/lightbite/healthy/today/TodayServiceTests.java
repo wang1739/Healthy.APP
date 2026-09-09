@@ -265,7 +265,7 @@ class TodayServiceTests {
                 : "PROFILE_INCOMPLETE".equals(state) ? "PROFILE_INCOMPLETE" : "EMPTY";
         var day = new ActivityDtos.DayResponse(LocalDate.of(2026, 9, 8), dayStatus, List.of(),
                 "READY".equals(state) ? 2 : 0, "READY".equals(state) ? 75 : 0,
-                "READY".equals(state) ? 420 : 0, "0");
+                "READY".equals(state) ? 420 : 0, new BigDecimal("60"), "0");
         Integer targetDays = "READY".equals(state) ? 4 : null;
         Integer targetMinutes = "READY".equals(state) ? 150 : null;
         String planState = "READY".equals(state) ? "ACTIVE" : state;
