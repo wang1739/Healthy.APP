@@ -4,6 +4,7 @@ import 'package:healthy/core/api/api_config.dart';
 import 'package:healthy/core/storage/token_store.dart';
 import 'package:healthy/features/nutrition/domain/nutrition_data.dart';
 import 'package:healthy/features/hydration/domain/hydration_data.dart';
+import 'package:healthy/features/activity/domain/activity_data.dart';
 import 'package:healthy/features/today/domain/today_data.dart';
 
 class ApiClient {
@@ -222,6 +223,100 @@ class ApiClient {
         'POST',
         '/hydration/settings/adopt-plan-target',
       );
+
+  Future<List<ActivityType>> getActivityTypes({String query = ''}) async {
+    final response = await _authorized(
+      'GET',
+      '/activity/types',
+      queryParameters: {'query': query},
+    );
+    final value = response.data;
+    final items = value is List
+        ? value
+        : (value as Map?)?['items'] as List? ?? [];
+    return items
+        .map(
+          (item) =>
+              ActivityType.fromJson(Map<String, dynamic>.from(item as Map)),
+        )
+        .toList(growable: false);
+  }
+
+  Future<ActivityType> createCustomActivityType({
+    required String name,
+    required String referenceTypeId,
+  }) async {
+    final response = await _authorized(
+      'POST',
+      '/activity/types/custom',
+      data: {'name': name, 'referenceTypeId': referenceTypeId},
+    );
+    return ActivityType.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<ActivityDay> getActivityDay(DateTime date) async {
+    final response = await _authorized(
+      'GET',
+      '/activity/days/${formatLocalDate(date)}',
+      queryParameters: {'timezone': await _timezone()},
+    );
+    return ActivityDay.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<ActivityWeek> getActivityWeek(DateTime date) async {
+    final response = await _authorized(
+      'GET',
+      '/activity/weeks/${formatLocalDate(date)}',
+      queryParameters: {'timezone': await _timezone()},
+    );
+    return ActivityWeek.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<ActivityWriteResult> addActivityRecord(
+    Map<String, dynamic> data, {
+    required String idempotencyKey,
+  }) => _activityWrite(
+    'POST',
+    '/activity/records',
+    data: data,
+    headers: {'Idempotency-Key': idempotencyKey},
+  );
+
+  Future<ActivityWriteResult> updateActivityRecord(
+    String id,
+    Map<String, dynamic> data,
+  ) => _activityWrite('PUT', '/activity/records/$id', data: data);
+
+  Future<ActivityWriteResult> deleteActivityRecord(String id) =>
+      _activityWrite('DELETE', '/activity/records/$id');
+
+  Future<ActivityWriteResult> _activityWrite(
+    String method,
+    String path, {
+    Map<String, dynamic>? data,
+    Map<String, String>? headers,
+  }) async {
+    final timezone = await _timezone();
+    final body = data == null
+        ? null
+        : {...data, 'timezone': data['timezone'] ?? timezone};
+    final response = await _authorized(
+      method,
+      path,
+      data: body,
+      queryParameters: method == 'DELETE' ? {'timezone': timezone} : null,
+      headers: headers,
+    );
+    return ActivityWriteResult.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
 
   Future<HydrationDay> _hydrationDayRequest(
     String method,
