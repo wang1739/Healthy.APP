@@ -9,6 +9,8 @@ import static org.mockito.ArgumentMatchers.eq;
 
 import com.lightbite.healthy.plan.PlanDtos;
 import com.lightbite.healthy.plan.PlanService;
+import com.lightbite.healthy.activity.ActivityDtos;
+import com.lightbite.healthy.activity.ActivityService;
 import com.lightbite.healthy.hydration.HydrationDtos;
 import com.lightbite.healthy.hydration.HydrationService;
 import com.lightbite.healthy.nutrition.NutritionDtos;
@@ -29,17 +31,19 @@ class TodayServiceTests {
     private final ProfileService profiles = mock(ProfileService.class);
     private final NutritionService nutrition = mock(NutritionService.class);
     private final HydrationService hydration = mock(HydrationService.class);
+    private final ActivityService activity = mock(ActivityService.class);
     private TodayService service;
 
     @BeforeEach
     void setUp() {
-        service = new TodayService(plans, profiles, nutrition, hydration);
+        service = new TodayService(plans, profiles, nutrition, hydration, activity);
         when(profiles.completeness(USER_ID)).thenReturn(completeness(true, false));
         when(profiles.measurements(USER_ID)).thenReturn(List.of());
         when(plans.current(USER_ID)).thenReturn(current("EMPTY", null));
         when(nutrition.day(USER_ID, LocalDate.of(2026, 9, 8))).thenReturn(day("EMPTY", null));
         when(nutrition.day(USER_ID, LocalDate.now())).thenReturn(day("EMPTY", null));
         when(hydration.day(eq(USER_ID), any(LocalDate.class), anyString())).thenReturn(hydrationDay("EMPTY", 0));
+        when(activity.todaySummary(eq(USER_ID), any(LocalDate.class), anyString())).thenReturn(activitySummary("EMPTY"));
     }
 
     @Test
@@ -99,14 +103,50 @@ class TodayServiceTests {
     }
 
     @Test
-    void returnsEmptyNutritionAndHydrationWhileOtherFutureModulesStayComingSoon() {
+    void returnsEmptyNutritionHydrationAndActivityWhileOtherFutureModulesStayComingSoon() {
         TodayDtos.TodayResponse response = service.get(USER_ID, LocalDate.now());
 
         assertThat(response.nutrition().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
         assertThat(response.hydration().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
-        assertThat(response.activity().status()).isEqualTo(TodayDtos.ModuleStatus.COMING_SOON);
+        assertThat(response.activity().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
         assertThat(response.sleep().status()).isEqualTo(TodayDtos.ModuleStatus.COMING_SOON);
         assertThat(response.tasks().status()).isEqualTo(TodayDtos.ModuleStatus.COMING_SOON);
+    }
+
+    @Test
+    void mapsReadyActivitySummaryAndContainsItsFailure() {
+        LocalDate date = LocalDate.of(2026, 9, 8);
+        when(activity.todaySummary(eq(USER_ID), eq(date), anyString())).thenReturn(activitySummary("READY"));
+
+        TodayDtos.TodayResponse ready = service.get(USER_ID, date, "Asia/Shanghai");
+        assertThat(ready.activity().status()).isEqualTo(TodayDtos.ModuleStatus.READY);
+        assertThat(ready.activity().todayDurationMinutes()).isEqualTo(75);
+        assertThat(ready.activity().todayKcal()).isEqualTo(420);
+        assertThat(ready.activity().todayRecordCount()).isEqualTo(2);
+        assertThat(ready.activity().weekExerciseDays()).isEqualTo(3);
+        assertThat(ready.activity().weekDurationMinutes()).isEqualTo(140);
+        assertThat(ready.activity().targetExerciseDays()).isEqualTo(4);
+        assertThat(ready.activity().targetDurationMinutes()).isEqualTo(150);
+
+        when(activity.todaySummary(eq(USER_ID), eq(date), anyString()))
+                .thenThrow(new IllegalStateException("sql detail"));
+        TodayDtos.TodayResponse failed = service.get(USER_ID, date, "Asia/Shanghai");
+        assertThat(failed.activity().status()).isEqualTo(TodayDtos.ModuleStatus.ERROR);
+        assertThat(failed.activity().message()).doesNotContain("sql detail");
+        assertThat(failed.plan().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
+        assertThat(failed.hydration().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
+    }
+
+    @Test
+    void mapsActivityProfileAndPlanStatesWithoutTargets() {
+        for (String state : List.of("PROFILE_INCOMPLETE", "NO_PLAN", "PAUSED", "NEEDS_RECALCULATION", "RISK_BLOCKED")) {
+            when(activity.todaySummary(eq(USER_ID), any(LocalDate.class), anyString()))
+                    .thenReturn(activitySummary(state));
+            TodayDtos.ActivityModule module = service.get(USER_ID, LocalDate.now()).activity();
+            assertThat(module.status().name()).isEqualTo(state);
+            assertThat(module.targetExerciseDays()).isNull();
+            assertThat(module.targetDurationMinutes()).isNull();
+        }
     }
 
     @Test
@@ -218,5 +258,20 @@ class TodayServiceTests {
         return new HydrationDtos.DayResponse(LocalDate.of(2026, 9, 8), status, List.of(), total,
                 2000, Math.max(0, 2000 - total), new BigDecimal(total).divide(new BigDecimal("2000")),
                 "DEFAULT", settings);
+    }
+
+    private ActivityDtos.TodaySummary activitySummary(String state) {
+        String dayStatus = "READY".equals(state) ? "READY"
+                : "PROFILE_INCOMPLETE".equals(state) ? "PROFILE_INCOMPLETE" : "EMPTY";
+        var day = new ActivityDtos.DayResponse(LocalDate.of(2026, 9, 8), dayStatus, List.of(),
+                "READY".equals(state) ? 2 : 0, "READY".equals(state) ? 75 : 0,
+                "READY".equals(state) ? 420 : 0, "0");
+        Integer targetDays = "READY".equals(state) ? 4 : null;
+        Integer targetMinutes = "READY".equals(state) ? 150 : null;
+        String planState = "READY".equals(state) ? "ACTIVE" : state;
+        var week = new ActivityDtos.WeekResponse(LocalDate.of(2026, 9, 7), LocalDate.of(2026, 9, 13),
+                state, "READY".equals(state) ? 3 : 0, "READY".equals(state) ? 140 : 0,
+                "READY".equals(state) ? 800 : 0, targetDays, targetMinutes, planState);
+        return new ActivityDtos.TodaySummary(day, week);
     }
 }

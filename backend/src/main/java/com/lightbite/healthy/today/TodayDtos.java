@@ -10,7 +10,8 @@ public final class TodayDtos {
     }
 
     public enum ModuleStatus {
-        READY, EMPTY, PROFILE_INCOMPLETE, COMING_SOON, ERROR
+        READY, EMPTY, PROFILE_INCOMPLETE, NO_PLAN, PAUSED, NEEDS_RECALCULATION, RISK_BLOCKED,
+        COMING_SOON, ERROR
     }
 
     public record PlanModule(
@@ -61,6 +62,19 @@ public final class TodayDtos {
     ) {
     }
 
+    public record ActivityModule(
+            ModuleStatus status,
+            Integer todayDurationMinutes,
+            Integer todayKcal,
+            Integer todayRecordCount,
+            Integer weekExerciseDays,
+            Integer weekDurationMinutes,
+            Integer targetExerciseDays,
+            Integer targetDurationMinutes,
+            String message
+    ) {
+    }
+
     public record NextAction(String type, String title) {
     }
 
@@ -70,7 +84,7 @@ public final class TodayDtos {
             WeightModule weight,
             NutritionModule nutrition,
             HydrationModule hydration,
-            Module activity,
+            ActivityModule activity,
             Module sleep,
             Module tasks,
             NextAction nextAction

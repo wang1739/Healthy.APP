@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
@@ -150,6 +151,44 @@ class ActivityServiceTests {
         assertThat(service.week(USER, LocalDate.of(2026, 9, 8), "UTC").planState()).isEqualTo("PAUSED");
     }
 
+    @Test
+    void selectsAllIntensityMetValuesRoundsAndUsesLatestWeightSnapshot() {
+        jdbc.update("INSERT INTO body_measurements (id,user_id,weight_kg,measured_at) VALUES (RANDOM_UUID(),?,?,?)",
+                USER, new BigDecimal("61.00"), java.sql.Timestamp.from(Instant.parse("2026-09-02T00:00:00Z")));
+
+        var low = service.create(USER, "met-low", request("act-walking", "LOW", 1,
+                "2026-09-08T08:00:00Z", "UTC", "ESTIMATED", null)).record();
+        var medium = service.create(USER, "met-medium", request("act-walking", "MEDIUM", 30,
+                "2026-09-08T09:00:00Z", "UTC", "ESTIMATED", null)).record();
+        var high = service.create(USER, "met-high", request("act-walking", "HIGH", 60,
+                "2026-09-08T10:00:00Z", "UTC", "USER_OVERRIDE", 0)).record();
+
+        assertThat(low.metSnapshot()).isEqualByComparingTo("2.50");
+        assertThat(low.estimatedKcal()).isEqualTo(3);
+        assertThat(medium.metSnapshot()).isEqualByComparingTo("3.50");
+        assertThat(medium.estimatedKcal()).isEqualTo(107);
+        assertThat(high.metSnapshot()).isEqualByComparingTo("5.00");
+        assertThat(high.weightKgSnapshot()).isEqualByComparingTo("61.00");
+        assertThat(high.finalKcal()).isZero();
+        assertThat(high.calculationVersion()).isEqualTo("MET_V1");
+    }
+
+    @Test
+    void exposesTargetsOnlyForAnActivePlan() {
+        LocalDate date = LocalDate.of(2026, 9, 8);
+        when(plans.current(USER)).thenReturn(new PlanDtos.CurrentResponse(
+                "EMPTY", null, null, null, null, null, null, false, null));
+        assertPlanState(date, "NO_PLAN", null, null);
+
+        for (String state : List.of("PAUSED", "NEEDS_RECALCULATION", "RISK_BLOCKED")) {
+            when(plans.current(USER)).thenReturn(plan(state, 3, 150));
+            assertPlanState(date, state, null, null);
+        }
+
+        when(plans.current(USER)).thenReturn(plan("ACTIVE", 3, 150));
+        assertPlanState(date, "ACTIVE", 3, 150);
+    }
+
     private ActivityDtos.RecordRequest request(String type, String intensity, int minutes, String occurredAt,
                                                String timezone, String calorieMode, Integer finalKcal) {
         return new ActivityDtos.RecordRequest(type, intensity, minutes, OffsetDateTime.parse(occurredAt),
@@ -179,5 +218,12 @@ class ActivityServiceTests {
     private void assertNotFound(org.assertj.core.api.ThrowableAssert.ThrowingCallable call) {
         assertThatThrownBy(call).isInstanceOfSatisfying(ApiException.class,
                 error -> assertThat(error.code()).isEqualTo("ACTIVITY_RECORD_NOT_FOUND"));
+    }
+
+    private void assertPlanState(LocalDate date, String state, Integer days, Integer minutes) {
+        ActivityDtos.WeekResponse week = service.week(USER, date, "UTC");
+        assertThat(week.planState()).isEqualTo(state);
+        assertThat(week.targetExerciseDays()).isEqualTo(days);
+        assertThat(week.targetDurationMinutes()).isEqualTo(minutes);
     }
 }
