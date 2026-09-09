@@ -101,4 +101,22 @@ void main() {
     expect(activity.weekExerciseDays, 2);
     expect(activity.targetDurationMinutes, 150);
   });
+
+  test('解析 Today 睡眠权威汇总', () {
+    final json = response();
+    json['sleep'] = {
+      'status': 'READY',
+      'nightDurationMinutes': 450,
+      'targetMinutes': 480,
+      'differenceMinutes': -30,
+      'qualityScore': 4,
+      'qualityLabel': '良好',
+      'napDurationMinutes': 30,
+      'hasEnoughTrendData': true,
+    };
+    final sleep = TodayData.fromJson(json).sleep;
+    expect(sleep.nightDurationMinutes, 450);
+    expect(sleep.qualityLabel, '良好');
+    expect(sleep.hasEnoughTrendData, isTrue);
+  });
 }

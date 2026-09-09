@@ -82,6 +82,8 @@ Future<void> _pumpPage(
   DateTime Function()? now,
   VoidCallback? onOpenActivity,
   VoidCallback? onRecordActivity,
+  VoidCallback? onOpenSleep,
+  VoidCallback? onRecordSleep,
 }) async {
   await tester.binding.setSurfaceSize(Size(width, 900));
   final app = MaterialApp(
@@ -101,6 +103,8 @@ Future<void> _pumpPage(
           now: now,
           onOpenActivity: onOpenActivity,
           onRecordActivity: onRecordActivity,
+          onOpenSleep: onOpenSleep,
+          onRecordSleep: onRecordSleep,
         ),
       ),
     ),
@@ -366,6 +370,48 @@ void main() {
     );
     expect(opened, 1);
     final action = find.text('记录运动');
+    await tester.scrollUntilVisible(
+      action,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(action);
+    expect(recorded, 1);
+  });
+
+  testWidgets('睡眠摘要和记录睡眠分别使用两个真实入口', (tester) async {
+    final json = overview(moduleStatus: 'READY');
+    json['sleep'] = {
+      'status': 'READY',
+      'nightDurationMinutes': 450,
+      'targetMinutes': 480,
+      'differenceMinutes': -30,
+      'qualityScore': 4,
+      'qualityLabel': '良好',
+      'napDurationMinutes': 30,
+      'hasEnoughTrendData': true,
+    };
+    var opened = 0;
+    var recorded = 0;
+    await _pumpPage(
+      tester,
+      _FakeApi(json),
+      UserAccess.profileComplete,
+      onOpenSleep: () => opened++,
+      onRecordSleep: () => recorded++,
+    );
+    final summary = find.text('7 小时 30 分钟 · 良好');
+    expect(summary, findsOneWidget);
+    await tester.scrollUntilVisible(
+      summary,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(
+      find.ancestor(of: summary, matching: find.byType(InkWell)),
+    );
+    expect(opened, 1);
+    final action = find.text('记录睡眠');
     await tester.scrollUntilVisible(
       action,
       300,

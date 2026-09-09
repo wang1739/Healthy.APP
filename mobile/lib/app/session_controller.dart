@@ -25,6 +25,7 @@ class SessionController extends ChangeNotifier {
   int profileStep = 0;
   bool riskBlocked = false;
   int sessionRevision = 0;
+  String accountKey = 'guest';
   PendingFeature? _pendingFeature;
 
   PendingFeature? get pendingFeature => _pendingFeature;
@@ -33,6 +34,7 @@ class SessionController extends ChangeNotifier {
     try {
       final session = await api.restoreSession();
       if (session != null) {
+        accountKey = _accountKey(session.phone);
         access = session.profileComplete
             ? UserAccess.profileComplete
             : UserAccess.profileIncomplete;
@@ -40,6 +42,7 @@ class SessionController extends ChangeNotifier {
         stage = AppStage.home;
       } else {
         access = UserAccess.guest;
+        accountKey = 'guest';
         final preferences = await SharedPreferences.getInstance();
         stage = preferences.getBool(_guestBrowseKey) == true
             ? AppStage.home
@@ -47,6 +50,7 @@ class SessionController extends ChangeNotifier {
       }
     } catch (_) {
       access = UserAccess.guest;
+      accountKey = 'guest';
       final preferences = await SharedPreferences.getInstance();
       stage = preferences.getBool(_guestBrowseKey) == true
           ? AppStage.home
@@ -59,6 +63,7 @@ class SessionController extends ChangeNotifier {
     final preferences = await SharedPreferences.getInstance();
     await preferences.setBool(_guestBrowseKey, true);
     access = UserAccess.guest;
+    accountKey = 'guest';
     _pendingFeature = null;
     stage = AppStage.home;
     notifyListeners();
@@ -66,6 +71,7 @@ class SessionController extends ChangeNotifier {
 
   Future<void> acceptLogin(LoginResult result) async {
     sessionRevision++;
+    accountKey = _accountKey(result.phone);
     access = result.profileComplete
         ? UserAccess.profileComplete
         : UserAccess.profileIncomplete;
@@ -137,6 +143,7 @@ class SessionController extends ChangeNotifier {
     final preferences = await SharedPreferences.getInstance();
     await preferences.setBool(_guestBrowseKey, true);
     access = UserAccess.guest;
+    accountKey = 'guest';
     profileStep = 0;
     riskBlocked = false;
     _pendingFeature = null;
@@ -153,5 +160,15 @@ class SessionController extends ChangeNotifier {
     } catch (_) {
       profileStep = access == UserAccess.profileComplete ? 7 : 0;
     }
+  }
+
+  String _accountKey(String? phone) {
+    final value = phone?.trim();
+    if (value == null || value.isEmpty) return 'account';
+    var hash = 0x811c9dc5;
+    for (final unit in value.codeUnits) {
+      hash = ((hash ^ unit) * 0x01000193) & 0xffffffff;
+    }
+    return hash.toRadixString(16).padLeft(8, '0');
   }
 }

@@ -8,6 +8,8 @@ import 'package:healthy/core/api/backend_status.dart';
 import 'package:healthy/core/theme/app_theme.dart';
 import 'package:healthy/features/today/domain/today_data.dart';
 import 'package:healthy/features/activity/domain/activity_data.dart';
+import 'package:healthy/features/sleep/application/sleep_reminder_scheduler.dart';
+import 'package:healthy/features/sleep/domain/sleep_data.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _TodayApi extends ApiClient {
@@ -67,6 +69,23 @@ class _TodayApi extends ApiClient {
       highMet: 8,
     ),
   ];
+
+  @override
+  Future<SleepDay> getSleepDay(DateTime date) async => SleepDay.fromJson({
+    'date': formatLocalDate(date),
+    'status': 'EMPTY',
+    'records': const [],
+    'planState': 'NO_PLAN',
+  });
+
+  @override
+  Future<SleepWeek> getSleepWeek(DateTime date) async => SleepWeek.fromJson({
+    'startDate': formatLocalDate(date),
+    'endDate': formatLocalDate(date),
+    'status': 'EMPTY',
+    'days': const [],
+    'planState': 'NO_PLAN',
+  });
 }
 
 void main() {
@@ -240,6 +259,49 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('记录运动'), findsWidgets);
     expect(find.byKey(const Key('activity-save')), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).destinations,
+      hasLength(6),
+    );
+  });
+
+  testWidgets('今日记录睡眠直接进入睡眠表单且不增加底部导航', (tester) async {
+    session = SessionController(_TodayApi());
+    session.completeProfile();
+    session.consumePendingFeature();
+    final scheduler = SleepReminderScheduler(
+      requestPermission: () async => true,
+      schedule: (_, _, _) async {},
+      cancel: (_) async {},
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          backendStatusProvider.overrideWith(
+            (ref) async => BackendStatus.connected,
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: AppShell(session: session, sleepReminderScheduler: scheduler),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final action = find.text('记录睡眠');
+    await tester.scrollUntilVisible(
+      action,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(action);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('sleep-save')), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
     await tester.pageBack();

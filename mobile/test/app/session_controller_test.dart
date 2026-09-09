@@ -100,4 +100,35 @@ void main() {
     expect(session.pendingFeature?.destination, 2);
     expect(session.pendingFeature?.label, '查看减脂方案');
   });
+
+  test('睡眠提醒使用稳定且不暴露手机号的账号键', () async {
+    const phone = '13800138000';
+    final first = SessionController(
+      _FakeApiClient(
+        restored: const LoginResult(profileComplete: true, phone: phone),
+      ),
+    );
+    final second = SessionController(
+      _FakeApiClient(
+        restored: const LoginResult(profileComplete: true, phone: phone),
+      ),
+    );
+    final other = SessionController(
+      _FakeApiClient(
+        restored: const LoginResult(
+          profileComplete: true,
+          phone: '13900139000',
+        ),
+      ),
+    );
+    await Future.wait([
+      first.bootstrap(),
+      second.bootstrap(),
+      other.bootstrap(),
+    ]);
+
+    expect(first.accountKey, second.accountKey);
+    expect(first.accountKey, isNot(other.accountKey));
+    expect(first.accountKey, isNot(contains(phone)));
+  });
 }

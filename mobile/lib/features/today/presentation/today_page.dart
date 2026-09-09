@@ -19,7 +19,10 @@ class TodayPage extends ConsumerStatefulWidget {
     this.onOpenHydration,
     this.onOpenActivity,
     this.onRecordActivity,
+    this.onOpenSleep,
+    this.onRecordSleep,
     this.activityRevision = 0,
+    this.sleepRevision = 0,
     this.now,
     super.key,
   });
@@ -32,7 +35,10 @@ class TodayPage extends ConsumerStatefulWidget {
   final VoidCallback? onOpenHydration;
   final VoidCallback? onOpenActivity;
   final VoidCallback? onRecordActivity;
+  final VoidCallback? onOpenSleep;
+  final VoidCallback? onRecordSleep;
   final int activityRevision;
+  final int sleepRevision;
   final DateTime Function()? now;
 
   @override
@@ -56,7 +62,8 @@ class _TodayPageState extends ConsumerState<TodayPage>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.access != widget.access ||
         oldWidget.api != widget.api ||
-        oldWidget.activityRevision != widget.activityRevision) {
+        oldWidget.activityRevision != widget.activityRevision ||
+        oldWidget.sleepRevision != widget.sleepRevision) {
       _loadPrivateData();
     }
   }
@@ -377,12 +384,16 @@ class _TodayPageState extends ConsumerState<TodayPage>
         ),
         _moduleCard(
           '睡眠',
-          data.plan.sleepHours == null
-              ? null
-              : '${data.plan.sleepHours!.toStringAsFixed(1)} 小时',
+          data.sleep.nightDurationMinutes == null
+              ? data.plan.sleepHours == null
+                    ? null
+                    : '${data.plan.sleepHours!.toStringAsFixed(1)} 小时'
+              : '${data.sleep.nightDurationMinutes! ~/ 60} 小时 ${data.sleep.nightDurationMinutes! % 60} 分钟 · ${data.sleep.qualityLabel ?? '未评价'}',
           data.sleep.status,
           Icons.bedtime_outlined,
           data.sleep.message,
+          onTap: widget.onOpenSleep,
+          emptyText: '今日暂无睡眠记录',
         ),
         _moduleCard(
           '体重',
@@ -427,7 +438,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
     VoidCallback? onTap,
   }) => Semantics(
     button: onTap != null,
-    label: onTap == null ? null : '$title摘要，点击查看运动管理',
+    label: onTap == null ? null : '$title摘要，点击查看$title管理',
     child: _card(
       child: InkWell(
         borderRadius: BorderRadius.circular(6),
@@ -457,9 +468,9 @@ class _TodayPageState extends ConsumerState<TodayPage>
               TodayModuleStatus.empty => emptyText,
               TodayModuleStatus.profileIncomplete => message ?? '完善健康档案后可使用',
               TodayModuleStatus.noPlan => message ?? '生成计划后可查看目标进度',
-              TodayModuleStatus.paused => message ?? '计划已暂停，仍可记录实际运动',
+              TodayModuleStatus.paused => message ?? '计划已暂停，仍可记录实际数据',
               TodayModuleStatus.needsRecalculation => message ?? '计划需要重新计算',
-              TodayModuleStatus.riskBlocked => message ?? '当前不展示普通运动目标',
+              TodayModuleStatus.riskBlocked => message ?? '当前不展示普通健康目标',
               TodayModuleStatus.error => message ?? '该项数据暂时无法加载',
               TodayModuleStatus.ready => '数据已更新',
             }, style: const TextStyle(color: Colors.black54)),
@@ -544,6 +555,8 @@ class _TodayPageState extends ConsumerState<TodayPage>
         ? widget.onOpenHydration
         : label == '记录运动' && widget.onRecordActivity != null
         ? widget.onRecordActivity
+        : label == '记录睡眠' && widget.onRecordSleep != null
+        ? widget.onRecordSleep
         : () => widget.onProtectedAction(label),
     icon: Icon(icon),
     label: Text(label),

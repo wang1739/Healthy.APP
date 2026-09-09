@@ -5,6 +5,7 @@ import 'package:healthy/core/storage/token_store.dart';
 import 'package:healthy/features/nutrition/domain/nutrition_data.dart';
 import 'package:healthy/features/hydration/domain/hydration_data.dart';
 import 'package:healthy/features/activity/domain/activity_data.dart';
+import 'package:healthy/features/sleep/domain/sleep_data.dart';
 import 'package:healthy/features/today/domain/today_data.dart';
 
 class ApiClient {
@@ -63,7 +64,7 @@ class ApiClient {
         'acceptedTerms': true,
       },
     );
-    return _acceptLogin(response.data!);
+    return _acceptLogin(response.data!, phone: phone);
   }
 
   Future<LoginResult> passwordLogin({
@@ -75,7 +76,7 @@ class ApiClient {
       '/auth/password/login',
       data: {'phone': phone, 'password': password, 'deviceName': deviceName},
     );
-    return _acceptLogin(response.data!);
+    return _acceptLogin(response.data!, phone: phone);
   }
 
   Future<LoginResult?> restoreSession() async {
@@ -318,6 +319,64 @@ class ApiClient {
     );
   }
 
+  Future<SleepDay> getSleepDay(DateTime date) async {
+    final response = await _authorized(
+      'GET',
+      '/sleep/days/${formatLocalDate(date)}',
+      queryParameters: {'timezone': await _timezone()},
+    );
+    return SleepDay.fromJson(Map<String, dynamic>.from(response.data as Map));
+  }
+
+  Future<SleepWeek> getSleepWeek(DateTime date) async {
+    final response = await _authorized(
+      'GET',
+      '/sleep/weeks/${formatLocalDate(date)}',
+      queryParameters: {'timezone': await _timezone()},
+    );
+    return SleepWeek.fromJson(Map<String, dynamic>.from(response.data as Map));
+  }
+
+  Future<SleepWriteResult> addSleepRecord(
+    Map<String, dynamic> data, {
+    required String idempotencyKey,
+  }) => _sleepWrite(
+    'POST',
+    '/sleep/records',
+    data: data,
+    headers: {'Idempotency-Key': idempotencyKey},
+  );
+
+  Future<SleepWriteResult> updateSleepRecord(
+    String id,
+    Map<String, dynamic> data,
+  ) => _sleepWrite('PUT', '/sleep/records/$id', data: data);
+
+  Future<SleepWriteResult> deleteSleepRecord(String id) =>
+      _sleepWrite('DELETE', '/sleep/records/$id');
+
+  Future<SleepWriteResult> _sleepWrite(
+    String method,
+    String path, {
+    Map<String, dynamic>? data,
+    Map<String, String>? headers,
+  }) async {
+    final timezone = await _timezone();
+    final body = data == null
+        ? null
+        : {...data, 'timezone': data['timezone'] ?? timezone};
+    final response = await _authorized(
+      method,
+      path,
+      data: body,
+      queryParameters: method == 'DELETE' ? {'timezone': timezone} : null,
+      headers: headers,
+    );
+    return SleepWriteResult.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
   Future<HydrationDay> _hydrationDayRequest(
     String method,
     String path, {
@@ -486,10 +545,16 @@ class ApiClient {
     }
   }
 
-  Future<LoginResult> _acceptLogin(Map<String, dynamic> data) async {
+  Future<LoginResult> _acceptLogin(
+    Map<String, dynamic> data, {
+    String? phone,
+  }) async {
     _accessToken = data['accessToken'] as String;
     await _tokenStore.saveRefreshToken(data['refreshToken'] as String);
-    return LoginResult(profileComplete: data['profileComplete'] == true);
+    return LoginResult(
+      profileComplete: data['profileComplete'] == true,
+      phone: phone ?? data['phone'] as String?,
+    );
   }
 
   static String errorMessage(Object error) {
