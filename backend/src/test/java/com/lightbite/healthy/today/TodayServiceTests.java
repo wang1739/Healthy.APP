@@ -17,6 +17,8 @@ import com.lightbite.healthy.nutrition.NutritionDtos;
 import com.lightbite.healthy.nutrition.NutritionService;
 import com.lightbite.healthy.profile.ProfileDtos;
 import com.lightbite.healthy.profile.ProfileService;
+import com.lightbite.healthy.sleep.SleepDtos;
+import com.lightbite.healthy.sleep.SleepService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -32,11 +34,12 @@ class TodayServiceTests {
     private final NutritionService nutrition = mock(NutritionService.class);
     private final HydrationService hydration = mock(HydrationService.class);
     private final ActivityService activity = mock(ActivityService.class);
+    private final SleepService sleep = mock(SleepService.class);
     private TodayService service;
 
     @BeforeEach
     void setUp() {
-        service = new TodayService(plans, profiles, nutrition, hydration, activity);
+        service = new TodayService(plans, profiles, nutrition, hydration, activity, sleep);
         when(profiles.completeness(USER_ID)).thenReturn(completeness(true, false));
         when(profiles.measurements(USER_ID)).thenReturn(List.of());
         when(plans.current(USER_ID)).thenReturn(current("EMPTY", null));
@@ -44,6 +47,7 @@ class TodayServiceTests {
         when(nutrition.day(USER_ID, LocalDate.now())).thenReturn(day("EMPTY", null));
         when(hydration.day(eq(USER_ID), any(LocalDate.class), anyString())).thenReturn(hydrationDay("EMPTY", 0));
         when(activity.todaySummary(eq(USER_ID), any(LocalDate.class), anyString())).thenReturn(activitySummary("EMPTY"));
+        when(sleep.todaySummary(eq(USER_ID), any(LocalDate.class), anyString())).thenReturn(sleepSummary("EMPTY"));
     }
 
     @Test
@@ -109,8 +113,29 @@ class TodayServiceTests {
         assertThat(response.nutrition().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
         assertThat(response.hydration().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
         assertThat(response.activity().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
-        assertThat(response.sleep().status()).isEqualTo(TodayDtos.ModuleStatus.COMING_SOON);
+        assertThat(response.sleep().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
         assertThat(response.tasks().status()).isEqualTo(TodayDtos.ModuleStatus.COMING_SOON);
+    }
+
+    @Test
+    void mapsReadySleepAndContainsItsFailure() {
+        LocalDate date = LocalDate.of(2026, 9, 8);
+        when(sleep.todaySummary(eq(USER_ID), eq(date), anyString())).thenReturn(sleepSummary("READY"));
+        TodayDtos.SleepModule ready = service.get(USER_ID, date, "Asia/Shanghai").sleep();
+        assertThat(ready.status()).isEqualTo(TodayDtos.ModuleStatus.READY);
+        assertThat(ready.nightDurationMinutes()).isEqualTo(480);
+        assertThat(ready.targetMinutes()).isEqualTo(480);
+        assertThat(ready.differenceMinutes()).isZero();
+        assertThat(ready.qualityLabel()).isEqualTo("良好");
+        assertThat(ready.napDurationMinutes()).isEqualTo(30);
+        assertThat(ready.hasEnoughTrendData()).isTrue();
+
+        when(sleep.todaySummary(eq(USER_ID), eq(date), anyString())).thenThrow(new IllegalStateException("sql detail"));
+        TodayDtos.TodayResponse failed = service.get(USER_ID, date, "Asia/Shanghai");
+        assertThat(failed.sleep().status()).isEqualTo(TodayDtos.ModuleStatus.ERROR);
+        assertThat(failed.sleep().message()).doesNotContain("sql detail");
+        assertThat(failed.activity().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
+        assertThat(failed.hydration().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
     }
 
     @Test
@@ -146,6 +171,17 @@ class TodayServiceTests {
             assertThat(module.status().name()).isEqualTo(state);
             assertThat(module.targetExerciseDays()).isNull();
             assertThat(module.targetDurationMinutes()).isNull();
+        }
+    }
+
+    @Test
+    void mapsSleepProfileAndPlanStatesWithoutTargets() {
+        for (String state : List.of("PROFILE_INCOMPLETE", "NO_PLAN", "PAUSED", "NEEDS_RECALCULATION", "RISK_BLOCKED")) {
+            when(sleep.todaySummary(eq(USER_ID), any(LocalDate.class), anyString()))
+                    .thenReturn(sleepSummary(state));
+            TodayDtos.SleepModule module = service.get(USER_ID, LocalDate.now()).sleep();
+            assertThat(module.status().name()).isEqualTo(state);
+            assertThat(module.targetMinutes()).isNull();
         }
     }
 
@@ -273,5 +309,19 @@ class TodayServiceTests {
                 state, "READY".equals(state) ? 3 : 0, "READY".equals(state) ? 140 : 0,
                 "READY".equals(state) ? 800 : 0, targetDays, targetMinutes, planState);
         return new ActivityDtos.TodaySummary(day, week);
+    }
+
+    private SleepDtos.TodaySummary sleepSummary(String state) {
+        var night = "READY".equals(state) ? new SleepDtos.RecordResponse("sleep", "NIGHT",
+                Instant.parse("2026-09-07T22:00:00Z"), Instant.parse("2026-09-08T06:00:00Z"), "UTC",
+                LocalDate.of(2026, 9, 8), 480, 4, "良好", List.of(), null, "MANUAL") : null;
+        String planState = "READY".equals(state) ? "ACTIVE" : state;
+        var day = new SleepDtos.DayResponse(LocalDate.of(2026, 9, 8), state, night, List.of(),
+                night == null ? List.of() : List.of(night), night == null ? 0 : 480, 30,
+                "READY".equals(state) ? 480 : null, "READY".equals(state) ? 0 : null, planState);
+        var week = new SleepDtos.WeekResponse(LocalDate.of(2026, 9, 2), LocalDate.of(2026, 9, 8), state,
+                List.of(), 470, "READY".equals(state) ? 480 : null, 3, new BigDecimal("4.0"), 30,
+                true, planState);
+        return new SleepDtos.TodaySummary(day, week);
     }
 }

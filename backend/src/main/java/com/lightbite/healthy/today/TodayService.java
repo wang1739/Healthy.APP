@@ -10,6 +10,8 @@ import com.lightbite.healthy.profile.ProfileDtos;
 import com.lightbite.healthy.profile.ProfileService;
 import com.lightbite.healthy.hydration.HydrationDtos;
 import com.lightbite.healthy.hydration.HydrationService;
+import com.lightbite.healthy.sleep.SleepDtos;
+import com.lightbite.healthy.sleep.SleepService;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
@@ -27,16 +29,18 @@ public class TodayService {
     private final NutritionService nutrition;
     private final HydrationService hydration;
     private final ActivityService activity;
+    private final SleepService sleep;
 
     public TodayService(
             PlanService plans, ProfileService profiles, NutritionService nutrition, HydrationService hydration,
-            ActivityService activity
+            ActivityService activity, SleepService sleep
     ) {
         this.plans = plans;
         this.profiles = profiles;
         this.nutrition = nutrition;
         this.hydration = hydration;
         this.activity = activity;
+        this.sleep = sleep;
     }
 
     public TodayDtos.TodayResponse get(String userId, LocalDate date) {
@@ -56,8 +60,38 @@ public class TodayService {
                 : hydration(userId, date, timezone);
         return new TodayDtos.TodayResponse(
                 date, plan, weight, nutrition(userId, date), hydrationModule, activity(userId, date, timezone),
-                COMING_SOON, COMING_SOON,
+                sleep(userId, date, timezone), COMING_SOON,
                 nextAction(profile, plan));
+    }
+
+    private TodayDtos.SleepModule sleep(String userId, LocalDate date, String timezone) {
+        try {
+            String zone = timezone == null || timezone.isBlank()
+                    ? ZoneId.systemDefault().getId() : timezone;
+            SleepDtos.TodaySummary summary = sleep.todaySummary(userId, date, zone);
+            SleepDtos.DayResponse day = summary.day();
+            SleepDtos.WeekResponse week = summary.week();
+            TodayDtos.ModuleStatus status = sleepStatus(day.status(), day.planState());
+            SleepDtos.RecordResponse night = day.night();
+            return new TodayDtos.SleepModule(status, day.nightDurationMinutes(), day.targetMinutes(),
+                    day.differenceMinutes(), night == null ? null : night.qualityScore(),
+                    night == null ? null : night.qualityLabel(), day.napDurationMinutes(),
+                    week.hasEnoughTrendData(), null);
+        } catch (RuntimeException exception) {
+            return new TodayDtos.SleepModule(TodayDtos.ModuleStatus.ERROR,
+                    null, null, null, null, null, null, null, LOAD_ERROR);
+        }
+    }
+
+    private TodayDtos.ModuleStatus sleepStatus(String dayStatus, String planState) {
+        if ("PROFILE_INCOMPLETE".equals(dayStatus)) return TodayDtos.ModuleStatus.PROFILE_INCOMPLETE;
+        return switch (planState) {
+            case "NO_PLAN" -> TodayDtos.ModuleStatus.NO_PLAN;
+            case "PAUSED" -> TodayDtos.ModuleStatus.PAUSED;
+            case "NEEDS_RECALCULATION" -> TodayDtos.ModuleStatus.NEEDS_RECALCULATION;
+            case "RISK_BLOCKED" -> TodayDtos.ModuleStatus.RISK_BLOCKED;
+            default -> "EMPTY".equals(dayStatus) ? TodayDtos.ModuleStatus.EMPTY : TodayDtos.ModuleStatus.READY;
+        };
     }
 
     private TodayDtos.ActivityModule activity(String userId, LocalDate date, String timezone) {
