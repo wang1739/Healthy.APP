@@ -8,6 +8,7 @@ import 'package:healthy/app/session_controller.dart';
 import 'package:healthy/core/api/api_client.dart';
 import 'package:healthy/core/theme/app_theme.dart';
 import 'package:healthy/features/hydration/application/hydration_reminder_scheduler.dart';
+import 'package:healthy/features/sleep/application/sleep_reminder_scheduler.dart';
 
 class HealthyApp extends StatefulWidget {
   const HealthyApp({super.key});
@@ -25,11 +26,15 @@ class _HealthyAppState extends State<HealthyApp> {
     super.initState();
     _session = SessionController(
       ApiClient.instance,
-      onLogout: HydrationReminderScheduler.instance.cancelHydrationReminders,
+      onLogout: () async {
+        await HydrationReminderScheduler.instance.cancelHydrationReminders();
+        await SleepReminderScheduler.instance.cancelActiveAccount();
+      },
     );
     unawaited(
       HydrationReminderScheduler.instance.initialize().catchError((_) {}),
     );
+    unawaited(SleepReminderScheduler.instance.initialize().catchError((_) {}));
     _router = buildRouter(_session);
     _session.bootstrap();
   }

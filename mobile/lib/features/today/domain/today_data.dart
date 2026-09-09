@@ -176,6 +176,13 @@ class TodayModuleData {
     this.weekDurationMinutes,
     this.targetExerciseDays,
     this.targetDurationMinutes,
+    this.nightDurationMinutes,
+    this.targetMinutes,
+    this.differenceMinutes,
+    this.qualityScore,
+    this.qualityLabel,
+    this.napDurationMinutes,
+    this.hasEnoughTrendData,
   });
 
   factory TodayModuleData.fromJson(Map<String, dynamic> json) =>
@@ -198,6 +205,13 @@ class TodayModuleData {
         weekDurationMinutes: (json['weekDurationMinutes'] as num?)?.toInt(),
         targetExerciseDays: (json['targetExerciseDays'] as num?)?.toInt(),
         targetDurationMinutes: (json['targetDurationMinutes'] as num?)?.toInt(),
+        nightDurationMinutes: (json['nightDurationMinutes'] as num?)?.toInt(),
+        targetMinutes: (json['targetMinutes'] as num?)?.toInt(),
+        differenceMinutes: (json['differenceMinutes'] as num?)?.toInt(),
+        qualityScore: (json['qualityScore'] as num?)?.toInt(),
+        qualityLabel: json['qualityLabel']?.toString(),
+        napDurationMinutes: (json['napDurationMinutes'] as num?)?.toInt(),
+        hasEnoughTrendData: json['hasEnoughTrendData'] as bool?,
       );
 
   final TodayModuleStatus status;
@@ -218,6 +232,13 @@ class TodayModuleData {
   final int? weekDurationMinutes;
   final int? targetExerciseDays;
   final int? targetDurationMinutes;
+  final int? nightDurationMinutes;
+  final int? targetMinutes;
+  final int? differenceMinutes;
+  final int? qualityScore;
+  final String? qualityLabel;
+  final int? napDurationMinutes;
+  final bool? hasEnoughTrendData;
 }
 
 class TodayNextAction {

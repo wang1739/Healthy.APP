@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:healthy/app/session_controller.dart';
 import 'package:healthy/features/account/presentation/account_page.dart';
@@ -8,12 +10,19 @@ import 'package:healthy/features/plan/presentation/plan_page.dart';
 import 'package:healthy/features/report/presentation/report_page.dart';
 import 'package:healthy/features/today/presentation/today_page.dart';
 import 'package:healthy/features/activity/presentation/activity_page.dart';
+import 'package:healthy/features/sleep/application/sleep_reminder_scheduler.dart';
+import 'package:healthy/features/sleep/presentation/sleep_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppShell extends StatefulWidget {
-  const AppShell({required this.session, super.key});
+  const AppShell({
+    required this.session,
+    this.sleepReminderScheduler,
+    super.key,
+  });
 
   final SessionController session;
+  final SleepReminderScheduler? sleepReminderScheduler;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -59,12 +68,15 @@ class _AppShellState extends State<AppShell> {
   bool _pinned = false;
   bool _autoPreview = false;
   int _activityRevision = 0;
+  int _sleepRevision = 0;
 
   @override
   void initState() {
     super.initState();
     widget.session.addListener(_sessionChanged);
     HydrationReminderScheduler.openHydration.addListener(_openHydration);
+    SleepReminderScheduler.openSleep.addListener(_openSleepNotification);
+    _syncSleepReminder();
     if (HydrationReminderScheduler.openHydration.value > 0) _index = 5;
     final pending = widget.session.consumePendingFeature();
     if (pending != null) {
@@ -74,6 +86,8 @@ class _AppShellState extends State<AppShell> {
         if (mounted) {
           if (pending.label == '记录运动') {
             _openActivity(record: true);
+          } else if (pending.label == '记录睡眠') {
+            _openSleep(record: true);
           }
           ScaffoldMessenger.of(
             context,
@@ -85,17 +99,34 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _sessionChanged() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      _syncSleepReminder();
+      setState(() {});
+    }
+  }
+
+  void _syncSleepReminder() {
+    if (widget.session.access != UserAccess.profileComplete) return;
+    unawaited(
+      (widget.sleepReminderScheduler ?? SleepReminderScheduler.instance).sync(
+        widget.session.accountKey,
+      ),
+    );
   }
 
   void _openHydration() {
     if (mounted) setState(() => _index = 5);
   }
 
+  void _openSleepNotification() {
+    if (mounted) _openSleep();
+  }
+
   @override
   void dispose() {
     widget.session.removeListener(_sessionChanged);
     HydrationReminderScheduler.openHydration.removeListener(_openHydration);
+    SleepReminderScheduler.openSleep.removeListener(_openSleepNotification);
     super.dispose();
   }
 
@@ -139,6 +170,7 @@ class _AppShellState extends State<AppShell> {
         return;
       }
       if (label == '记录运动') await _openActivity(record: true);
+      if (label == '记录睡眠') await _openSleep(record: true);
       return;
     }
 
@@ -203,6 +235,11 @@ class _AppShellState extends State<AppShell> {
             ? _openActivity(record: true)
             : _requestFeature('记录运动', 0),
         activityRevision: _activityRevision,
+        onOpenSleep: () => _openSleep(),
+        onRecordSleep: () => widget.session.access == UserAccess.profileComplete
+            ? _openSleep(record: true)
+            : _requestFeature('记录睡眠', 0),
+        sleepRevision: _sleepRevision,
       ),
       NutritionPage(
         api: widget.session.api,
@@ -313,6 +350,22 @@ class _AppShellState extends State<AppShell> {
           onProtectedAction: (label) => _requestFeature(label, 0),
           openRecordOnStart: record,
           onChanged: () => setState(() => _activityRevision++),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openSleep({bool record = false}) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => SleepPage(
+          api: widget.session.api,
+          access: widget.session.access,
+          sessionKey: widget.session.accountKey,
+          onProtectedAction: (label) => _requestFeature(label, 0),
+          openRecordOnStart: record,
+          onChanged: () => setState(() => _sleepRevision++),
+          reminderScheduler: widget.sleepReminderScheduler,
         ),
       ),
     );
