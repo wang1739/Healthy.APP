@@ -264,14 +264,14 @@ class _State extends ConsumerState<HydrationPage> with WidgetsBindingObserver {
   }
 
   Future<void> _custom(HydrationController c) async {
-    final input = TextEditingController();
-    await showDialog<void>(
+    var input = '';
+    final amount = await showDialog<int>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('自定义容量'),
         content: TextField(
-          controller: input,
           autofocus: true,
+          onChanged: (value) => input = value,
           keyboardType: TextInputType.number,
           decoration: const InputDecoration(labelText: '1–3000 ml'),
         ),
@@ -282,22 +282,23 @@ class _State extends ConsumerState<HydrationPage> with WidgetsBindingObserver {
           ),
           FilledButton(
             onPressed: () {
-              final value = int.tryParse(input.text);
+              final value = int.tryParse(input);
               if (value == null || value < 1 || value > 3000) {
                 ScaffoldMessenger.of(
                   this.context,
                 ).showSnackBar(const SnackBar(content: Text('请输入 1–3000 ml')));
                 return;
               }
-              Navigator.pop(context);
-              c.add(value, source: 'CUSTOM');
+              Navigator.pop(context, value);
             },
             child: const Text('添加'),
           ),
         ],
       ),
     );
-    input.dispose();
+    if (amount != null && mounted) {
+      await c.add(amount, source: 'CUSTOM');
+    }
   }
 
   Future<void> _delete(HydrationController c, HydrationEntry e) async {

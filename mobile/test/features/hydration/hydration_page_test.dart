@@ -91,4 +91,32 @@ void main() {
     expect(find.text('+250 ml'), findsOneWidget);
     expect(t.takeException(), isNull);
   });
+
+  testWidgets('自定义容量在弹窗关闭后提交且页面不崩溃', (t) async {
+    await t.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: HydrationPage(
+              api: Fake(),
+              access: UserAccess.profileComplete,
+              sessionKey: 'user',
+              onProtectedAction: (_) {},
+              now: () => DateTime(2026, 9, 8, 9),
+            ),
+          ),
+        ),
+      ),
+    );
+    await t.pumpAndSettle();
+
+    await t.tap(find.text('自定义'));
+    await t.pumpAndSettle();
+    await t.enterText(find.byType(TextField), '450');
+    await t.tap(find.text('添加'));
+    await t.pumpAndSettle();
+
+    expect(find.text('自定义容量'), findsNothing);
+    expect(t.takeException(), isNull);
+  });
 }
