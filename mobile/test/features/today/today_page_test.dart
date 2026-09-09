@@ -80,6 +80,8 @@ Future<void> _pumpPage(
   double width = 800,
   double textScale = 1,
   DateTime Function()? now,
+  VoidCallback? onOpenActivity,
+  VoidCallback? onRecordActivity,
 }) async {
   await tester.binding.setSurfaceSize(Size(width, 900));
   final app = MaterialApp(
@@ -97,6 +99,8 @@ Future<void> _pumpPage(
           onOpenPlan: onOpenPlan ?? () {},
           onProtectedAction: onProtectedAction ?? (_) {},
           now: now,
+          onOpenActivity: onOpenActivity,
+          onRecordActivity: onRecordActivity,
         ),
       ),
     ),
@@ -326,6 +330,49 @@ void main() {
     );
     expect(find.text('快捷操作'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('运动摘要和记录运动分别使用两个真实入口', (tester) async {
+    final json = overview(moduleStatus: 'READY');
+    json['activity'] = {
+      'status': 'READY',
+      'todayDurationMinutes': 30,
+      'todayKcal': 180,
+      'todayRecordCount': 1,
+      'weekExerciseDays': 2,
+      'weekDurationMinutes': 75,
+      'targetExerciseDays': 4,
+      'targetDurationMinutes': 150,
+    };
+    var opened = 0;
+    var recorded = 0;
+    await _pumpPage(
+      tester,
+      _FakeApi(json),
+      UserAccess.profileComplete,
+      onOpenActivity: () => opened++,
+      onRecordActivity: () => recorded++,
+    );
+
+    expect(find.text('30 分钟 · 180 kcal'), findsOneWidget);
+    final summaryText = find.text('30 分钟 · 180 kcal');
+    await tester.scrollUntilVisible(
+      summaryText,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(
+      find.ancestor(of: summaryText, matching: find.byType(InkWell)),
+    );
+    expect(opened, 1);
+    final action = find.text('记录运动');
+    await tester.scrollUntilVisible(
+      action,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(action);
+    expect(recorded, 1);
   });
 
   testWidgets('主要弹层使用 6px 圆角', (tester) async {

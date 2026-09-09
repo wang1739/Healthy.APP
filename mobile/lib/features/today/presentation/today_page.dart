@@ -17,6 +17,9 @@ class TodayPage extends ConsumerStatefulWidget {
     required this.onOpenPlan,
     this.onOpenNutrition,
     this.onOpenHydration,
+    this.onOpenActivity,
+    this.onRecordActivity,
+    this.activityRevision = 0,
     this.now,
     super.key,
   });
@@ -27,6 +30,9 @@ class TodayPage extends ConsumerStatefulWidget {
   final VoidCallback onOpenPlan;
   final VoidCallback? onOpenNutrition;
   final VoidCallback? onOpenHydration;
+  final VoidCallback? onOpenActivity;
+  final VoidCallback? onRecordActivity;
+  final int activityRevision;
   final DateTime Function()? now;
 
   @override
@@ -48,7 +54,9 @@ class _TodayPageState extends ConsumerState<TodayPage>
   @override
   void didUpdateWidget(covariant TodayPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.access != widget.access || oldWidget.api != widget.api) {
+    if (oldWidget.access != widget.access ||
+        oldWidget.api != widget.api ||
+        oldWidget.activityRevision != widget.activityRevision) {
       _loadPrivateData();
     }
   }
@@ -356,12 +364,16 @@ class _TodayPageState extends ConsumerState<TodayPage>
         ),
         _moduleCard(
           '运动',
-          data.plan.exerciseDays == null
-              ? null
-              : '${data.plan.exerciseDays} 天 / ${data.plan.exerciseMinutes} 分钟',
+          data.activity.todayDurationMinutes == null
+              ? data.plan.exerciseDays == null
+                    ? null
+                    : '${data.plan.exerciseDays} 天 / ${data.plan.exerciseMinutes} 分钟'
+              : '${data.activity.todayDurationMinutes} 分钟 · ${data.activity.todayKcal ?? 0} kcal',
           data.activity.status,
           Icons.directions_run,
           data.activity.message,
+          onTap: widget.onOpenActivity,
+          emptyText: '今日暂无运动记录',
         ),
         _moduleCard(
           '睡眠',
@@ -412,34 +424,48 @@ class _TodayPageState extends ConsumerState<TodayPage>
     IconData icon,
     String? message, {
     String emptyText = '今日暂无数据',
-  }) => _card(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
+    VoidCallback? onTap,
+  }) => Semantics(
+    button: onTap != null,
+    label: onTap == null ? null : '$title摘要，点击查看运动管理',
+    child: _card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: AppColors.green),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
+            Row(
+              children: [
+                Icon(icon, color: AppColors.green),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
             ),
+            if (value != null) ...[
+              const SizedBox(height: 8),
+              Text(value, style: const TextStyle(fontWeight: FontWeight.w700)),
+            ],
+            const SizedBox(height: 4),
+            Text(switch (status) {
+              TodayModuleStatus.comingSoon => message ?? '记录功能待接入',
+              TodayModuleStatus.empty => emptyText,
+              TodayModuleStatus.profileIncomplete => message ?? '完善健康档案后可使用',
+              TodayModuleStatus.noPlan => message ?? '生成计划后可查看目标进度',
+              TodayModuleStatus.paused => message ?? '计划已暂停，仍可记录实际运动',
+              TodayModuleStatus.needsRecalculation => message ?? '计划需要重新计算',
+              TodayModuleStatus.riskBlocked => message ?? '当前不展示普通运动目标',
+              TodayModuleStatus.error => message ?? '该项数据暂时无法加载',
+              TodayModuleStatus.ready => '数据已更新',
+            }, style: const TextStyle(color: Colors.black54)),
           ],
         ),
-        if (value != null) ...[
-          const SizedBox(height: 8),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w700)),
-        ],
-        const SizedBox(height: 4),
-        Text(switch (status) {
-          TodayModuleStatus.comingSoon => message ?? '记录功能待接入',
-          TodayModuleStatus.empty => emptyText,
-          TodayModuleStatus.error => message ?? '该项数据暂时无法加载',
-          TodayModuleStatus.ready => '数据已更新',
-        }, style: const TextStyle(color: Colors.black54)),
-      ],
+      ),
     ),
   );
 
@@ -516,6 +542,8 @@ class _TodayPageState extends ConsumerState<TodayPage>
         ? widget.onOpenNutrition
         : label == '记录饮水' && widget.onOpenHydration != null
         ? widget.onOpenHydration
+        : label == '记录运动' && widget.onRecordActivity != null
+        ? widget.onRecordActivity
         : () => widget.onProtectedAction(label),
     icon: Icon(icon),
     label: Text(label),

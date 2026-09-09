@@ -81,4 +81,24 @@ void main() {
     expect(nutrition.targetKcal, 1470);
     expect(nutrition.proteinG, 32.5);
   });
+
+  test('解析 Today 运动权威汇总', () {
+    final json = response();
+    json['activity'] = {
+      'status': 'READY',
+      'todayDurationMinutes': 30,
+      'todayKcal': 180,
+      'todayRecordCount': 1,
+      'weekExerciseDays': 2,
+      'weekDurationMinutes': 75,
+      'targetExerciseDays': 4,
+      'targetDurationMinutes': 150,
+    };
+
+    final activity = TodayData.fromJson(json).activity;
+    expect(activity.todayDurationMinutes, 30);
+    expect(activity.todayKcal, 180);
+    expect(activity.weekExerciseDays, 2);
+    expect(activity.targetDurationMinutes, 150);
+  });
 }

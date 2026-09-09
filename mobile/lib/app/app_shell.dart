@@ -7,6 +7,7 @@ import 'package:healthy/features/hydration/application/hydration_reminder_schedu
 import 'package:healthy/features/plan/presentation/plan_page.dart';
 import 'package:healthy/features/report/presentation/report_page.dart';
 import 'package:healthy/features/today/presentation/today_page.dart';
+import 'package:healthy/features/activity/presentation/activity_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppShell extends StatefulWidget {
@@ -57,6 +58,7 @@ class _AppShellState extends State<AppShell> {
   bool _hovered = false;
   bool _pinned = false;
   bool _autoPreview = false;
+  int _activityRevision = 0;
 
   @override
   void initState() {
@@ -70,6 +72,9 @@ class _AppShellState extends State<AppShell> {
       _autoPreview = pending.destination == 2;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
+          if (pending.label == '记录运动') {
+            _openActivity(record: true);
+          }
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(SnackBar(content: Text('准备完成，可以继续${pending.label}')));
@@ -133,13 +138,7 @@ class _AppShellState extends State<AppShell> {
         );
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            label.startsWith('记录') ? '该记录功能将在后续阶段接入' : '$label功能将在下一阶段接入',
-          ),
-        ),
-      );
+      if (label == '记录运动') await _openActivity(record: true);
       return;
     }
 
@@ -198,6 +197,12 @@ class _AppShellState extends State<AppShell> {
         onOpenPlan: () => setState(() => _index = 2),
         onOpenNutrition: () => setState(() => _index = 1),
         onOpenHydration: () => setState(() => _index = 5),
+        onOpenActivity: () => _openActivity(),
+        onRecordActivity: () =>
+            widget.session.access == UserAccess.profileComplete
+            ? _openActivity(record: true)
+            : _requestFeature('记录运动', 0),
+        activityRevision: _activityRevision,
       ),
       NutritionPage(
         api: widget.session.api,
@@ -293,6 +298,21 @@ class _AppShellState extends State<AppShell> {
           selectedIndex: _index,
           onDestinationSelected: (value) => setState(() => _index = value),
           destinations: _destinations,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openActivity({bool record = false}) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => ActivityPage(
+          api: widget.session.api,
+          access: widget.session.access,
+          sessionKey: widget.session.sessionRevision.toString(),
+          onProtectedAction: (label) => _requestFeature(label, 0),
+          openRecordOnStart: record,
+          onChanged: () => setState(() => _activityRevision++),
         ),
       ),
     );
