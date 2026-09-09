@@ -30,7 +30,13 @@ class _FakeApi extends ApiClient {
   bool fail = false;
   final keys = <String>[];
   final loads = <String, Completer<ActivityDay>>{};
+  final typeLoads = <String, Completer<List<ActivityType>>>{};
   Map<String, dynamic>? lastBody;
+  int updates = 0;
+
+  @override
+  Future<List<ActivityType>> getActivityTypes({String query = ''}) =>
+      typeLoads[query]?.future ?? Future.value(const []);
 
   @override
   Future<ActivityDay> getActivityDay(DateTime date) {
@@ -48,6 +54,20 @@ class _FakeApi extends ApiClient {
     required String idempotencyKey,
   }) async {
     keys.add(idempotencyKey);
+    lastBody = data;
+    if (fail) throw DioException(requestOptions: RequestOptions());
+    return ActivityWriteResult(
+      day: _day(data['date'] as String, 180),
+      week: _week(data['date'] as String),
+    );
+  }
+
+  @override
+  Future<ActivityWriteResult> updateActivityRecord(
+    String id,
+    Map<String, dynamic> data,
+  ) async {
+    updates++;
     lastBody = data;
     if (fail) throw DioException(requestOptions: RequestOptions());
     return ActivityWriteResult(
@@ -145,5 +165,53 @@ void main() {
     );
     expect(first, isNot(otherAccount));
     expect(first, isNot(otherDate));
+  });
+
+  test('旧搜索响应不覆盖较新的搜索结果', () async {
+    final api = _FakeApi();
+    api.typeLoads['跑'] = Completer<List<ActivityType>>();
+    api.typeLoads['跑步'] = Completer<List<ActivityType>>();
+    final controller = ActivityController(
+      api,
+      userKey: 'u1',
+      now: () => DateTime(2026, 9, 9),
+    );
+    final old = controller.searchTypes('跑');
+    final latest = controller.searchTypes('跑步');
+    api.typeLoads['跑步']!.complete([
+      const ActivityType(
+        id: 'running',
+        name: '跑步',
+        category: 'CARDIO',
+        scope: ActivityTypeScope.system,
+        lowMet: 4,
+        mediumMet: 6,
+        highMet: 8,
+      ),
+    ]);
+    await latest;
+    api.typeLoads['跑']!.complete(const []);
+    await old;
+    expect(controller.state.types.single.name, '跑步');
+  });
+
+  test('编辑失败重试仍调用编辑接口', () async {
+    final api = _FakeApi()..fail = true;
+    final controller = ActivityController(
+      api,
+      userKey: 'u1',
+      now: () => DateTime(2026, 9, 9),
+      initialDate: DateTime(2026, 9, 9),
+    );
+    final draft = {
+      'activityTypeId': 'running',
+      'durationMinutes': 30,
+      'occurredAt': '2026-09-09T09:00:00Z',
+    };
+    await controller.save(draft, recordId: 'r1');
+    api.fail = false;
+    await controller.retrySave();
+    expect(api.updates, 2);
+    expect(api.keys, isEmpty);
   });
 }

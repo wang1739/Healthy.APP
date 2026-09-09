@@ -51,6 +51,8 @@ class ActivityController extends ChangeNotifier {
   int _request = 0;
   Future<void>? _saving;
   String? _idempotencyKey;
+  String? _retryRecordId;
+  int _typeRequest = 0;
   bool _disposed = false;
 
   static DateTime _dateOnly(DateTime value) =>
@@ -108,9 +110,10 @@ class ActivityController extends ChangeNotifier {
   Future<void> refresh() => load(state.date, force: true);
 
   Future<List<ActivityType>> searchTypes(String query) async {
+    final request = ++_typeRequest;
     try {
       final types = await api.getActivityTypes(query: query.trim());
-      if (!_disposed) {
+      if (!_disposed && request == _typeRequest) {
         state = _copy(types: types, clearError: true);
         notifyListeners();
       }
@@ -170,6 +173,7 @@ class ActivityController extends ChangeNotifier {
     final active = _saving;
     if (active != null) return active;
     saveDraft(draft);
+    _retryRecordId = recordId;
     final body = Map<String, dynamic>.from(draft)
       ..putIfAbsent('date', () => formatLocalDate(state.date));
     final operation = _write(
@@ -184,7 +188,7 @@ class ActivityController extends ChangeNotifier {
 
   Future<void> retrySave() => state.draft == null
       ? Future.value()
-      : save(Map<String, dynamic>.from(state.draft!));
+      : save(Map<String, dynamic>.from(state.draft!), recordId: _retryRecordId);
 
   Future<void> delete(String id) =>
       _write(() => api.deleteActivityRecord(id), clearDraft: false);
@@ -213,6 +217,7 @@ class ActivityController extends ChangeNotifier {
         draft: clearDraft ? null : state.draft,
       );
       _idempotencyKey = null;
+      _retryRecordId = null;
       onChanged?.call();
     } catch (error) {
       if (_disposed ||

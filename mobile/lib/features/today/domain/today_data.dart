@@ -3,12 +3,27 @@ String formatLocalDate(DateTime date) =>
     '${date.month.toString().padLeft(2, '0')}-'
     '${date.day.toString().padLeft(2, '0')}';
 
-enum TodayModuleStatus { ready, empty, comingSoon, error }
+enum TodayModuleStatus {
+  ready,
+  empty,
+  comingSoon,
+  profileIncomplete,
+  noPlan,
+  paused,
+  needsRecalculation,
+  riskBlocked,
+  error,
+}
 
 TodayModuleStatus _status(Object? value) => switch (value) {
   'READY' => TodayModuleStatus.ready,
   'EMPTY' => TodayModuleStatus.empty,
   'COMING_SOON' => TodayModuleStatus.comingSoon,
+  'PROFILE_INCOMPLETE' => TodayModuleStatus.profileIncomplete,
+  'NO_PLAN' => TodayModuleStatus.noPlan,
+  'PAUSED' => TodayModuleStatus.paused,
+  'NEEDS_RECALCULATION' => TodayModuleStatus.needsRecalculation,
+  'RISK_BLOCKED' => TodayModuleStatus.riskBlocked,
   'ERROR' => TodayModuleStatus.error,
   _ => TodayModuleStatus.error,
 };
@@ -154,6 +169,13 @@ class TodayModuleData {
     this.targetMl,
     this.remainingMl,
     this.progress,
+    this.todayDurationMinutes,
+    this.todayKcal,
+    this.todayRecordCount,
+    this.weekExerciseDays,
+    this.weekDurationMinutes,
+    this.targetExerciseDays,
+    this.targetDurationMinutes,
   });
 
   factory TodayModuleData.fromJson(Map<String, dynamic> json) =>
@@ -169,6 +191,13 @@ class TodayModuleData {
         targetMl: (json['targetMl'] as num?)?.toInt(),
         remainingMl: (json['remainingMl'] as num?)?.toInt(),
         progress: (json['progress'] as num?)?.toDouble(),
+        todayDurationMinutes: (json['todayDurationMinutes'] as num?)?.toInt(),
+        todayKcal: (json['todayKcal'] as num?)?.toInt(),
+        todayRecordCount: (json['todayRecordCount'] as num?)?.toInt(),
+        weekExerciseDays: (json['weekExerciseDays'] as num?)?.toInt(),
+        weekDurationMinutes: (json['weekDurationMinutes'] as num?)?.toInt(),
+        targetExerciseDays: (json['targetExerciseDays'] as num?)?.toInt(),
+        targetDurationMinutes: (json['targetDurationMinutes'] as num?)?.toInt(),
       );
 
   final TodayModuleStatus status;
@@ -182,6 +211,13 @@ class TodayModuleData {
   final int? targetMl;
   final int? remainingMl;
   final double? progress;
+  final int? todayDurationMinutes;
+  final int? todayKcal;
+  final int? todayRecordCount;
+  final int? weekExerciseDays;
+  final int? weekDurationMinutes;
+  final int? targetExerciseDays;
+  final int? targetDurationMinutes;
 }
 
 class TodayNextAction {

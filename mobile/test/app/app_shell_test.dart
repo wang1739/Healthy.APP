@@ -7,6 +7,7 @@ import 'package:healthy/core/api/api_client.dart';
 import 'package:healthy/core/api/backend_status.dart';
 import 'package:healthy/core/theme/app_theme.dart';
 import 'package:healthy/features/today/domain/today_data.dart';
+import 'package:healthy/features/activity/domain/activity_data.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _TodayApi extends ApiClient {
@@ -37,6 +38,35 @@ class _TodayApi extends ApiClient {
 
   @override
   Future<Map<String, dynamic>> getCurrentPlan() async => {'state': 'EMPTY'};
+
+  @override
+  Future<ActivityDay> getActivityDay(DateTime date) async =>
+      ActivityDay.fromJson({
+        'date': formatLocalDate(date),
+        'weightKg': 60,
+        'records': const [],
+      });
+
+  @override
+  Future<ActivityWeek> getActivityWeek(DateTime date) async =>
+      ActivityWeek.fromJson({
+        'weekStart': formatLocalDate(date),
+        'weekEnd': formatLocalDate(date),
+        'planStatus': 'NO_PLAN',
+      });
+
+  @override
+  Future<List<ActivityType>> getActivityTypes({String query = ''}) async => [
+    const ActivityType(
+      id: 'running',
+      name: '跑步',
+      category: 'CARDIO',
+      scope: ActivityTypeScope.system,
+      lowMet: 4,
+      mediumMet: 6,
+      highMet: 8,
+    ),
+  ];
 }
 
 void main() {
@@ -179,5 +209,44 @@ void main() {
     await tester.tap(action);
     await tester.pumpAndSettle();
     expect(find.text('饮食记录'), findsOneWidget);
+  });
+
+  testWidgets('今日记录运动直接进入运动表单且不增加底部导航', (tester) async {
+    session = SessionController(_TodayApi());
+    session.completeProfile();
+    session.consumePendingFeature();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          backendStatusProvider.overrideWith(
+            (ref) async => BackendStatus.connected,
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: AppShell(session: session),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final action = find.text('记录运动');
+    await tester.scrollUntilVisible(
+      action,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(action);
+    await tester.pumpAndSettle();
+    expect(find.text('记录运动'), findsWidgets);
+    expect(find.byKey(const Key('activity-save')), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).destinations,
+      hasLength(6),
+    );
   });
 }
