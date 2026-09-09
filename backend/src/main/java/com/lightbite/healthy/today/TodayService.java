@@ -1,5 +1,7 @@
 package com.lightbite.healthy.today;
 
+import com.lightbite.healthy.activity.ActivityDtos;
+import com.lightbite.healthy.activity.ActivityService;
 import com.lightbite.healthy.plan.PlanDtos;
 import com.lightbite.healthy.plan.PlanService;
 import com.lightbite.healthy.nutrition.NutritionDtos;
@@ -24,14 +26,17 @@ public class TodayService {
     private final ProfileService profiles;
     private final NutritionService nutrition;
     private final HydrationService hydration;
+    private final ActivityService activity;
 
     public TodayService(
-            PlanService plans, ProfileService profiles, NutritionService nutrition, HydrationService hydration
+            PlanService plans, ProfileService profiles, NutritionService nutrition, HydrationService hydration,
+            ActivityService activity
     ) {
         this.plans = plans;
         this.profiles = profiles;
         this.nutrition = nutrition;
         this.hydration = hydration;
+        this.activity = activity;
     }
 
     public TodayDtos.TodayResponse get(String userId, LocalDate date) {
@@ -50,8 +55,37 @@ public class TodayService {
                         null, null, null, null, "请先完成健康档案")
                 : hydration(userId, date, timezone);
         return new TodayDtos.TodayResponse(
-                date, plan, weight, nutrition(userId, date), hydrationModule, COMING_SOON, COMING_SOON, COMING_SOON,
+                date, plan, weight, nutrition(userId, date), hydrationModule, activity(userId, date, timezone),
+                COMING_SOON, COMING_SOON,
                 nextAction(profile, plan));
+    }
+
+    private TodayDtos.ActivityModule activity(String userId, LocalDate date, String timezone) {
+        try {
+            String zone = timezone == null || timezone.isBlank()
+                    ? ZoneId.systemDefault().getId() : timezone;
+            ActivityDtos.TodaySummary summary = activity.todaySummary(userId, date, zone);
+            ActivityDtos.DayResponse day = summary.day();
+            ActivityDtos.WeekResponse week = summary.week();
+            TodayDtos.ModuleStatus status = activityStatus(day.status(), week.planState());
+            return new TodayDtos.ActivityModule(status, day.totalDurationMinutes(), day.totalKcal(),
+                    day.recordCount(), week.exerciseDays(), week.durationMinutes(), week.targetExerciseDays(),
+                    week.targetDurationMinutes(), null);
+        } catch (RuntimeException exception) {
+            return new TodayDtos.ActivityModule(TodayDtos.ModuleStatus.ERROR,
+                    null, null, null, null, null, null, null, LOAD_ERROR);
+        }
+    }
+
+    private TodayDtos.ModuleStatus activityStatus(String dayStatus, String planState) {
+        if ("PROFILE_INCOMPLETE".equals(dayStatus)) return TodayDtos.ModuleStatus.PROFILE_INCOMPLETE;
+        return switch (planState) {
+            case "NO_PLAN" -> TodayDtos.ModuleStatus.NO_PLAN;
+            case "PAUSED" -> TodayDtos.ModuleStatus.PAUSED;
+            case "NEEDS_RECALCULATION" -> TodayDtos.ModuleStatus.NEEDS_RECALCULATION;
+            case "RISK_BLOCKED" -> TodayDtos.ModuleStatus.RISK_BLOCKED;
+            default -> "EMPTY".equals(dayStatus) ? TodayDtos.ModuleStatus.EMPTY : TodayDtos.ModuleStatus.READY;
+        };
     }
 
     private TodayDtos.HydrationModule hydration(String userId, LocalDate date, String timezone) {
