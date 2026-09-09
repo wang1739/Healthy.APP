@@ -56,7 +56,11 @@ void main() {
     final adapter = _Adapter();
     final dio = Dio(BaseOptions(baseUrl: 'http://localhost/api/v1'))
       ..httpClientAdapter = adapter;
-    final api = ApiClient(dio: dio, tokenStore: _MemoryTokenStore());
+    final api = ApiClient(
+      dio: dio,
+      tokenStore: _MemoryTokenStore(),
+      timezone: () async => 'Asia/Shanghai',
+    );
     await api.smsLogin(
       phone: '13800138000',
       code: '123456',
@@ -68,7 +72,10 @@ void main() {
     final request = adapter.requests.last;
     expect(request.method, 'GET');
     expect(request.path, '/today');
-    expect(request.queryParameters, {'date': '2026-09-08'});
+    expect(request.queryParameters, {
+      'date': '2026-09-08',
+      'timezone': 'Asia/Shanghai',
+    });
     expect(request.headers['Authorization'], 'Bearer access');
     expect(data.date, DateTime(2026, 9, 8));
   });

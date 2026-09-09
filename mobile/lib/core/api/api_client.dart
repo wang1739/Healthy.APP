@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:healthy/core/api/api_config.dart';
 import 'package:healthy/core/storage/token_store.dart';
 import 'package:healthy/features/nutrition/domain/nutrition_data.dart';
@@ -6,14 +7,19 @@ import 'package:healthy/features/hydration/domain/hydration_data.dart';
 import 'package:healthy/features/today/domain/today_data.dart';
 
 class ApiClient {
-  ApiClient({Dio? dio, TokenStore? tokenStore})
-    : _dio = dio ?? Dio(_options()),
-      _tokenStore = tokenStore ?? TokenStore();
+  ApiClient({
+    Dio? dio,
+    TokenStore? tokenStore,
+    Future<String> Function()? timezone,
+  }) : _dio = dio ?? Dio(_options()),
+       _tokenStore = tokenStore ?? TokenStore(),
+       _timezone = timezone ?? _deviceTimezone;
 
   static final instance = ApiClient();
 
   final Dio _dio;
   final TokenStore _tokenStore;
+  final Future<String> Function() _timezone;
   String? _accessToken;
   Future<bool>? _refreshing;
 
@@ -23,6 +29,9 @@ class ApiClient {
     receiveTimeout: const Duration(seconds: 5),
     headers: {'Content-Type': 'application/json'},
   );
+
+  static Future<String> _deviceTimezone() async =>
+      (await FlutterTimezone.getLocalTimezone()).identifier;
 
   Future<bool> ping() async {
     final response = await _dio.get<Map<String, dynamic>>('/system/ping');
@@ -113,7 +122,10 @@ class ApiClient {
     final response = await _authorized(
       'GET',
       '/today',
-      queryParameters: {'date': formatLocalDate(date)},
+      queryParameters: {
+        'date': formatLocalDate(date),
+        'timezone': await _timezone(),
+      },
     );
     return TodayData.fromJson(Map<String, dynamic>.from(response.data as Map));
   }

@@ -26,4 +26,33 @@ void main() {
     expect(find.text('每日目标（ml）'), findsOneWidget);
     expect(find.text('提醒'), findsOneWidget);
   });
+
+  testWidgets('计划目标未编辑时以 null 保存其他设置', (t) async {
+    Map<String, dynamic>? saved;
+    final settings = HydrationSettings.fromJson({
+      'dailyTargetMl': null,
+      'effectiveTargetMl': 1900,
+      'defaultCupMl': 250,
+      'reminderEnabled': false,
+      'targetSource': 'PLAN',
+      'version': 1,
+    });
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: HydrationSettingsSheet(
+            settings: settings,
+            onSave: (value) async => saved = value,
+            onAdoptPlan: () async {},
+          ),
+        ),
+      ),
+    );
+
+    await t.tap(find.text('保存设置'));
+    await t.pumpAndSettle();
+
+    expect(saved?['dailyTargetMl'], isNull);
+    expect(saved?['defaultCupMl'], 250);
+  });
 }

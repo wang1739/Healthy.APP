@@ -6,13 +6,18 @@ void main() {
     final day = HydrationDay.fromJson({
       'date': '2026-09-08',
       'status': 'READY',
-      'consumedMl': 650,
+      'totalMl': 650,
       'targetMl': 2000,
       'remainingMl': 1350,
       'progress': .325,
       'targetSource': 'PLAN',
       'unknown': true,
-      'settings': {'defaultCupMl': 250, 'version': 2, 'reminderEnabled': false},
+      'settings': {
+        'defaultCupMl': 250,
+        'currentPlanTargetMl': 1900,
+        'version': 2,
+        'reminderEnabled': false,
+      },
       'entries': [
         {
           'id': 'e1',
@@ -23,6 +28,8 @@ void main() {
       ],
     });
     expect(day.targetSource, HydrationTargetSource.plan);
+    expect(day.consumedMl, 650);
+    expect(day.settings.planTargetMl, 1900);
     expect(day.settings.defaultCupMl, 250);
     expect(day.entries.single.amountMl, 250);
     expect(day.progress, .325);

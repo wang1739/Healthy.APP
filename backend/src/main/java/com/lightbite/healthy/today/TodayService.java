@@ -35,6 +35,10 @@ public class TodayService {
     }
 
     public TodayDtos.TodayResponse get(String userId, LocalDate date) {
+        return get(userId, date, null);
+    }
+
+    public TodayDtos.TodayResponse get(String userId, LocalDate date, String timezone) {
         ProfileDtos.CompletenessResponse profile = profile(userId);
         TodayDtos.PlanModule plan = plan(userId);
         if (profile != null && !profile.complete()) {
@@ -44,15 +48,17 @@ public class TodayService {
         TodayDtos.HydrationModule hydrationModule = profile != null && !profile.complete()
                 ? new TodayDtos.HydrationModule(TodayDtos.ModuleStatus.PROFILE_INCOMPLETE,
                         null, null, null, null, "请先完成健康档案")
-                : hydration(userId, date);
+                : hydration(userId, date, timezone);
         return new TodayDtos.TodayResponse(
                 date, plan, weight, nutrition(userId, date), hydrationModule, COMING_SOON, COMING_SOON, COMING_SOON,
                 nextAction(profile, plan));
     }
 
-    private TodayDtos.HydrationModule hydration(String userId, LocalDate date) {
+    private TodayDtos.HydrationModule hydration(String userId, LocalDate date, String timezone) {
         try {
-            HydrationDtos.DayResponse day = hydration.day(userId, date, ZoneId.systemDefault().getId());
+            String zone = timezone == null || timezone.isBlank()
+                    ? ZoneId.systemDefault().getId() : timezone;
+            HydrationDtos.DayResponse day = hydration.day(userId, date, zone);
             return new TodayDtos.HydrationModule(
                     "EMPTY".equals(day.status()) ? TodayDtos.ModuleStatus.EMPTY : TodayDtos.ModuleStatus.READY,
                     day.totalMl(), day.targetMl(), day.remainingMl(), day.progress(), null);

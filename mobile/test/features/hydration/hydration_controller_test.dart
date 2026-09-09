@@ -24,6 +24,7 @@ HydrationDay day(int consumed) => HydrationDay.fromJson({
 class Fake extends ApiClient {
   bool fail = false;
   final keys = <String>[];
+  Map<String, dynamic>? requestData;
   @override
   Future<HydrationDay> getHydrationDay(
     DateTime d, {
@@ -35,6 +36,7 @@ class Fake extends ApiClient {
     required String idempotencyKey,
   }) async {
     keys.add(idempotencyKey);
+    requestData = data;
     if (fail) throw DioException(requestOptions: RequestOptions());
     return day(data['amountMl'] as int);
   }
@@ -73,5 +75,20 @@ void main() {
     await c.add(250);
     expect(c.state.data!.consumedMl, 250);
     expect(c.state.saveError, isNull);
+  });
+
+  test('提交后端可解析的带时区饮水时间', () async {
+    final api = Fake();
+    final c = HydrationController(
+      api,
+      userKey: 'u',
+      now: () => DateTime(2026, 9, 8, 9, 30),
+      timezone: () => Future.value('Asia/Shanghai'),
+    );
+    await c.load(DateTime(2026, 9, 8));
+    await c.add(250);
+    final occurredAt = api.requestData!['occurredAt'] as String;
+    expect(occurredAt, endsWith('Z'));
+    expect(DateTime.parse(occurredAt).isUtc, isTrue);
   });
 }

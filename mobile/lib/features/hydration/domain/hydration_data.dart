@@ -40,7 +40,9 @@ class HydrationSettings {
             (json['reminderIntervalMinutes'] as num?)?.toInt() ?? 120,
         quietStart: json['quietStartTime']?.toString(),
         quietEnd: json['quietEndTime']?.toString(),
-        planTargetMl: (json['planTargetMl'] as num?)?.toInt(),
+        planTargetMl:
+            (json['currentPlanTargetMl'] as num?)?.toInt() ??
+            (json['planTargetMl'] as num?)?.toInt(),
         planTargetChanged: json['planTargetChanged'] == true,
         targetSource: _source(json['targetSource']),
         version: (json['version'] as num?)?.toInt() ?? 0,
@@ -112,7 +114,10 @@ class HydrationDay {
     return HydrationDay(
       date: DateTime.parse(json['date'].toString()),
       status: json['status']?.toString() ?? 'ERROR',
-      consumedMl: (json['consumedMl'] as num?)?.toInt() ?? 0,
+      consumedMl:
+          (json['totalMl'] as num?)?.toInt() ??
+          (json['consumedMl'] as num?)?.toInt() ??
+          0,
       targetMl:
           (json['targetMl'] as num?)?.toInt() ?? settings.effectiveTargetMl,
       remainingMl: (json['remainingMl'] as num?)?.toInt() ?? 0,

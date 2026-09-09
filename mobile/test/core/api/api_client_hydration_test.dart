@@ -47,7 +47,7 @@ const settings = {
 const day = {
   'date': '2026-09-08',
   'status': 'EMPTY',
-  'consumedMl': 0,
+  'totalMl': 0,
   'targetMl': 2000,
   'remainingMl': 2000,
   'progress': 0,

@@ -18,6 +18,10 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -25,7 +29,6 @@ class TodayIntegrationTests {
 
     private static final String USER_A = "today-user-a";
     private static final String USER_B = "today-user-b";
-
     @Autowired WebApplicationContext applicationContext;
     @Autowired JdbcTemplate jdbc;
     private MockMvc mockMvc;
@@ -96,6 +99,34 @@ class TodayIntegrationTests {
                 .andExpect(jsonPath("$.hydration.targetMl").value(2000))
                 .andExpect(jsonPath("$.hydration.remainingMl").value(1250))
                 .andExpect(jsonPath("$.hydration.progress").value(0.375));
+    }
+
+    @Test
+    void usesClientTimezoneForHydrationAndKeepsOmittedTimezoneCompatible() throws Exception {
+        Instant occurredAt = Instant.parse("2026-09-08T12:30:00Z");
+        ZoneId serverZone = ZoneId.systemDefault();
+        ZoneId clientZone = ZoneId.of("Pacific/Kiritimati");
+        LocalDate serverDate = occurredAt.atZone(serverZone).toLocalDate();
+        if (occurredAt.atZone(clientZone).toLocalDate().equals(serverDate)) {
+            clientZone = ZoneId.of("Pacific/Pago_Pago");
+        }
+        LocalDate clientDate = occurredAt.atZone(clientZone).toLocalDate();
+
+        jdbc.update("""
+                INSERT INTO hydration_entries
+                (id,user_id,amount_ml,occurred_at,timezone,source,idempotency_key)
+                VALUES ('timezone-water',?,300,?,'Asia/Shanghai','QUICK','timezone-key')
+                """, USER_A, Timestamp.from(occurredAt));
+
+        mockMvc.perform(get("/api/v1/today").param("date", clientDate.toString())
+                        .param("timezone", clientZone.getId()).with(user(USER_A)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hydration.status").value("READY"))
+                .andExpect(jsonPath("$.hydration.consumedMl").value(300));
+
+        mockMvc.perform(get("/api/v1/today").param("date", serverDate.toString()).with(user(USER_A)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hydration.consumedMl").value(300));
     }
 
     @Test

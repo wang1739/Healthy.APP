@@ -20,8 +20,9 @@ public class TodayController {
     @GetMapping
     TodayDtos.TodayResponse today(
             Authentication authentication,
-            @RequestParam LocalDate date
+            @RequestParam LocalDate date,
+            @RequestParam(required = false) String timezone
     ) {
-        return service.get(authentication.getName(), date);
+        return service.get(authentication.getName(), date, timezone);
     }
 }

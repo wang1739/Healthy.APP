@@ -103,7 +103,7 @@ class HydrationController extends ChangeNotifier {
           now().hour,
           now().minute,
           now().second,
-        ).toIso8601String(),
+        ).toUtc().toIso8601String(),
         'timezone': await timezone(),
         'source': source,
       }, idempotencyKey: _retryKey!);

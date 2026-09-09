@@ -148,7 +148,11 @@ class _State extends State<HydrationSettingsSheet> {
               }
               await widget.onSave({
                 ...widget.settings.toJson(),
-                'dailyTargetMl': t,
+                'dailyTargetMl':
+                    widget.settings.dailyTargetMl == null &&
+                        t == widget.settings.effectiveTargetMl
+                    ? null
+                    : t,
                 'defaultCupMl': c,
                 'reminderEnabled': enabled,
                 'reminderStartTime': _wire(reminderStart),
