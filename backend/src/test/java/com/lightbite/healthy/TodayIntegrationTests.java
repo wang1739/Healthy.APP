@@ -39,6 +39,8 @@ class TodayIntegrationTests {
         jdbc.update("DELETE FROM hydration_entries");
         jdbc.update("DELETE FROM hydration_settings");
         jdbc.update("DELETE FROM activity_records");
+        jdbc.update("DELETE FROM sleep_record_tags");
+        jdbc.update("DELETE FROM sleep_records");
         jdbc.update("DELETE FROM meal_entries");
         jdbc.update("DELETE FROM health_plan_versions");
         jdbc.update("DELETE FROM health_plans");
@@ -122,6 +124,24 @@ class TodayIntegrationTests {
                 .andExpect(jsonPath("$.activity.weekExerciseDays").value(1))
                 .andExpect(jsonPath("$.activity.weekDurationMinutes").value(30))
                 .andExpect(jsonPath("$.activity.targetExerciseDays").doesNotExist());
+    }
+
+    @Test
+    void returnsRealSleepSummary() throws Exception {
+        jdbc.update("""
+                INSERT INTO sleep_records
+                (id,user_id,record_type,started_at,ended_at,timezone,wake_local_date,active_night_wake_date,duration_minutes,
+                 quality_score,source,idempotency_key)
+                VALUES ('today-sleep',?,'NIGHT','2026-09-07 22:00:00','2026-09-08 06:00:00','UTC',
+                        '2026-09-08','2026-09-08',480,4,'MANUAL','today-sleep-key')
+                """, USER_A);
+        mockMvc.perform(get("/api/v1/today?date=2026-09-08&timezone=UTC").with(user(USER_A)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.sleep.status").value("NO_PLAN"))
+                .andExpect(jsonPath("$.sleep.nightDurationMinutes").value(480))
+                .andExpect(jsonPath("$.sleep.qualityScore").value(4))
+                .andExpect(jsonPath("$.sleep.qualityLabel").value("良好"))
+                .andExpect(jsonPath("$.sleep.napDurationMinutes").value(0))
+                .andExpect(jsonPath("$.sleep.hasEnoughTrendData").value(false));
     }
 
     @Test
@@ -243,6 +263,8 @@ class TodayIntegrationTests {
                 .andExpect(jsonPath("$.hydration.status").value("PROFILE_INCOMPLETE"))
                 .andExpect(jsonPath("$.hydration.consumedMl").doesNotExist())
                 .andExpect(jsonPath("$.activity.status").value("PROFILE_INCOMPLETE"))
+                .andExpect(jsonPath("$.sleep.status").value("PROFILE_INCOMPLETE"))
+                .andExpect(jsonPath("$.sleep.targetMinutes").doesNotExist())
                 .andExpect(jsonPath("$.nextAction.type").value("COMPLETE_PROFILE"));
     }
 

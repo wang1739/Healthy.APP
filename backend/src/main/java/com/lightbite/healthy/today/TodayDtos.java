@@ -75,6 +75,19 @@ public final class TodayDtos {
     ) {
     }
 
+    public record SleepModule(
+            ModuleStatus status,
+            Integer nightDurationMinutes,
+            Integer targetMinutes,
+            Integer differenceMinutes,
+            Integer qualityScore,
+            String qualityLabel,
+            Integer napDurationMinutes,
+            Boolean hasEnoughTrendData,
+            String message
+    ) {
+    }
+
     public record NextAction(String type, String title) {
     }
 
@@ -85,7 +98,7 @@ public final class TodayDtos {
             NutritionModule nutrition,
             HydrationModule hydration,
             ActivityModule activity,
-            Module sleep,
+            SleepModule sleep,
             Module tasks,
             NextAction nextAction
     ) {
