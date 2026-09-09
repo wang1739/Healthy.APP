@@ -28,7 +28,7 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
+class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   static const _pinnedKey = 'sidebar_pinned';
   static const _destinations = [
     NavigationDestination(
@@ -73,6 +73,7 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     widget.session.addListener(_sessionChanged);
     HydrationReminderScheduler.openHydration.addListener(_openHydration);
     SleepReminderScheduler.openSleep.addListener(_openSleepNotification);
@@ -114,6 +115,11 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _syncSleepReminder();
+  }
+
   void _openHydration() {
     if (mounted) setState(() => _index = 5);
   }
@@ -124,6 +130,7 @@ class _AppShellState extends State<AppShell> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.session.removeListener(_sessionChanged);
     HydrationReminderScheduler.openHydration.removeListener(_openHydration);
     SleepReminderScheduler.openSleep.removeListener(_openSleepNotification);

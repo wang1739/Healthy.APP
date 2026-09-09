@@ -311,4 +311,35 @@ void main() {
       hasLength(6),
     );
   });
+
+  testWidgets('应用恢复前台时重新安排当前账号睡眠提醒', (tester) async {
+    session = SessionController(_TodayApi());
+    session.completeProfile();
+    session.consumePendingFeature();
+    var cancellations = 0;
+    final scheduler = SleepReminderScheduler(
+      cancel: (_) async => cancellations++,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          backendStatusProvider.overrideWith(
+            (ref) async => BackendStatus.connected,
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: AppShell(session: session, sleepReminderScheduler: scheduler),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(cancellations, 7);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+
+    expect(cancellations, 14);
+  });
 }
