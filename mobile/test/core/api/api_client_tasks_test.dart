@@ -145,6 +145,10 @@ void main() {
     expect(adapter.calls[1].path, endsWith('2026-09-10'));
     expect(adapter.calls[4].headers['Idempotency-Key'], 'create-key');
     expect(adapter.calls[7].headers['Idempotency-Key'], 'complete-key');
+    expect(adapter.calls[7].queryParameters['timezone'], 'Asia/Shanghai');
+    expect(adapter.calls[8].queryParameters['timezone'], 'Asia/Shanghai');
+    expect(adapter.calls[9].data['timezone'], 'Asia/Shanghai');
+    expect(adapter.calls[10].data['timezone'], 'Asia/Shanghai');
     expect(adapter.calls[15].headers['Idempotency-Key'], 'event-key');
     expect(adapter.calls[12].queryParameters['effectiveDate'], '2026-09-10');
     expect(adapter.calls[4].data['date'], '2026-09-10');

@@ -26,7 +26,11 @@ public final class TaskDtos {
                                         Integer expectedVersion, String timezone) {
     }
 
-    public record PostponeRequest(String type, OffsetDateTime customAt, String timezone) {
+    public record PostponeRequest(String type, OffsetDateTime customAt, LocalDate localDate, String localTime,
+                                  String timezone) {
+        public PostponeRequest(String type, OffsetDateTime customAt, String timezone) {
+            this(type, customAt, null, null, timezone);
+        }
     }
 
     public record SkipRequest(String reason, String timezone) {
@@ -46,8 +50,9 @@ public final class TaskDtos {
     public record NotificationEventsRequest(List<NotificationEventRequest> events) {
     }
 
-    public record InstanceResponse(String id, String templateId, String source, String title, String note,
-                                   String category, String priority, boolean allDay, String localTime,
+    public record InstanceResponse(String id, String templateId, int templateVersion, String recurrenceType,
+                                   List<Integer> weekdays, String source, String title, String note, String category,
+                                   String priority, boolean allDay, String localTime,
                                    Integer reminderOffsetMinutes, LocalDate originalLocalDate,
                                    LocalDate currentLocalDate, Instant originalDueAt, Instant currentDueAt,
                                    String timezone, String status, String completionSource, Instant completedAt,

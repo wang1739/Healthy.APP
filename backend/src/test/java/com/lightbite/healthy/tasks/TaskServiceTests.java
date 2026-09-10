@@ -87,6 +87,49 @@ class TaskServiceTests {
     }
 
     @Test
+    void returnsTemplateMetadataSeparatelyAfterInstanceStateChanges() {
+        var created = service.create(USER, "template-version",
+                request("重复安排", false, "09:00", "DAILY", null));
+        var completed = service.complete(USER, created.instances().get(0).id(), "complete-version", "UTC");
+
+        assertThat(completed.version()).isEqualTo(1);
+        assertThat(completed.templateVersion()).isEqualTo(created.version());
+        assertThat(completed.recurrenceType()).isEqualTo("DAILY");
+        assertThat(completed.weekdays()).isEmpty();
+        service.updateTemplate(USER, created.templateId(), new TaskDtos.TemplateUpdateRequest("新的安排", null,
+                "LIFE", "NORMAL", false, "10:00", "DAILY", null, null,
+                LocalDate.of(2026, 9, 10), completed.templateVersion(), "UTC"));
+    }
+
+    @Test
+    void postponesCustomLocalDateAndTimeInTheRequestedTimezone() {
+        var created = service.create(USER, "custom-local-time",
+                request("自选延期", false, "09:00", "NONE", null));
+
+        var postponed = service.postpone(USER, created.instances().get(0).id(), "custom-local-key",
+                new TaskDtos.PostponeRequest("CUSTOM", null, LocalDate.of(2026, 9, 12), "10:30",
+                        "Asia/Shanghai"));
+
+        assertThat(postponed.currentLocalDate()).isEqualTo(LocalDate.of(2026, 9, 12));
+        assertThat(postponed.currentDueAt()).isEqualTo(Instant.parse("2026-09-12T02:30:00Z"));
+    }
+
+    @Test
+    void customPostponeTurnsAnAllDayInstanceIntoATimedInstance() {
+        var created = service.create(USER, "custom-all-day",
+                request("全天自选延期", true, null, "NONE", null));
+
+        var postponed = service.postpone(USER, created.instances().get(0).id(), "custom-all-day-key",
+                new TaskDtos.PostponeRequest("CUSTOM", null, LocalDate.of(2026, 9, 12), "10:30",
+                        "Asia/Shanghai"));
+
+        assertThat(postponed.allDay()).isFalse();
+        assertThat(postponed.localTime()).isEqualTo("10:30");
+        assertThat(postponed.currentLocalDate()).isEqualTo(LocalDate.of(2026, 9, 12));
+        assertThat(postponed.currentDueAt()).isEqualTo(Instant.parse("2026-09-12T02:30:00Z"));
+    }
+
+    @Test
     void postponesEditsAndDeletesOnlyRequestedScopeWithVersionChecks() {
         var created = service.create(USER, "repeat", request("原任务", false, "09:00", "DAILY", null));
         var first = created.instances().get(0);

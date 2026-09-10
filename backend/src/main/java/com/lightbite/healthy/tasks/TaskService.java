@@ -138,6 +138,7 @@ public class TaskService {
         String type = request.type().trim().toUpperCase(Locale.ROOT);
         LocalDate date;
         Instant due;
+        LocalTime customTime = null;
         if ("LATER".equals(type)) {
             if (current.currentDueAt() == null) throw invalid("type", "全天任务不能稍后 30 分钟");
             due = current.currentDueAt().plusSeconds(1800);
@@ -146,8 +147,13 @@ public class TaskService {
             date = current.currentLocalDate().plusDays(1);
             due = current.allDay() ? null : schedule.toInstant(date, LocalTime.parse(current.localTime()), zone.getId());
         } else if ("CUSTOM".equals(type)) {
-            if (request.customAt() == null) throw invalid("customAt", "请选择延期时间");
-            due = request.customAt().toInstant();
+            if (request.customAt() != null) {
+                due = request.customAt().toInstant();
+                customTime = due.atZone(zone).toLocalTime();
+            } else {
+                customTime = parseTime(request.localTime(), "localTime");
+                due = schedule.toInstant(request.localDate(), customTime, zone.getId());
+            }
             if (!due.isAfter(clock.instant())) throw invalid("customAt", "延期时间必须晚于当前时间");
             date = due.atZone(zone).toLocalDate();
         } else {
@@ -155,10 +161,18 @@ public class TaskService {
         }
         TaskDtos.InstanceResponse concurrentReplay = reserve(userId, key, id, "POSTPONE");
         if (concurrentReplay != null) return concurrentReplay;
-        jdbc.update("UPDATE task_instances SET current_local_date=?,current_due_at=?,timezone=?,"
-                        + "postponed_from=COALESCE(postponed_from,current_due_at),postpone_count=postpone_count+1,"
-                        + "version=version+1,updated_at=? WHERE id=? AND user_id=? AND deleted_at IS NULL",
-                date, timestamp(due), zone.getId(), now(), id, userId);
+        if (current.allDay() && "CUSTOM".equals(type)) {
+            jdbc.update("UPDATE task_instances SET current_local_date=?,current_due_at=?,timezone=?,all_day=FALSE,"
+                            + "local_time=?,postponed_from=COALESCE(postponed_from,current_due_at),"
+                            + "postpone_count=postpone_count+1,version=version+1,updated_at=? "
+                            + "WHERE id=? AND user_id=? AND deleted_at IS NULL",
+                    date, timestamp(due), zone.getId(), customTime, now(), id, userId);
+        } else {
+            jdbc.update("UPDATE task_instances SET current_local_date=?,current_due_at=?,timezone=?,"
+                            + "postponed_from=COALESCE(postponed_from,current_due_at),postpone_count=postpone_count+1,"
+                            + "version=version+1,updated_at=? WHERE id=? AND user_id=? AND deleted_at IS NULL",
+                    date, timestamp(due), zone.getId(), now(), id, userId);
+        }
         return requireInstance(userId, id);
     }
 
@@ -241,7 +255,8 @@ public class TaskService {
 
     @Transactional
     public TaskDtos.SettingsResponse settings(String userId) {
-        jdbc.update("MERGE INTO task_settings (user_id) KEY(user_id) VALUES (?)", userId);
+        jdbc.update("INSERT INTO task_settings (user_id) VALUES (?) ON DUPLICATE KEY UPDATE user_id=VALUES(user_id)",
+                userId);
         return jdbc.queryForObject("SELECT * FROM task_settings WHERE user_id=?", (rs, row) -> settings(rs), userId);
     }
 
@@ -480,7 +495,9 @@ public class TaskService {
         Object[] parameters = new Object[args.length + 1];
         parameters[0] = userId;
         System.arraycopy(args, 0, parameters, 1, args.length);
-        return jdbc.query("SELECT i.*,t.source,t.plan_version,t.user_overridden FROM task_instances i "
+        return jdbc.query("SELECT i.*,t.source,t.plan_version,t.user_overridden,t.version AS template_version,"
+                        + "t.recurrence_type AS template_recurrence_type,t.weekdays_mask AS template_weekdays_mask "
+                        + "FROM task_instances i "
                         + "JOIN task_templates t ON t.id=i.template_id WHERE i.user_id=? AND " + condition
                         + " ORDER BY i.current_due_at,i.title,i.id",
                 (rs, row) -> instance(rs), parameters);
@@ -515,7 +532,9 @@ public class TaskService {
         boolean overdue = "PENDING".equals(rs.getString("status")) && due != null
                 && due.toInstant().isBefore(clock.instant());
         return new TaskDtos.InstanceResponse(rs.getString("id"), rs.getString("template_id"),
-                rs.getString("source"), rs.getString("title"), rs.getString("note"), rs.getString("category"),
+                rs.getInt("template_version"), rs.getString("template_recurrence_type"),
+                weekdays((Integer) rs.getObject("template_weekdays_mask")), rs.getString("source"),
+                rs.getString("title"), rs.getString("note"), rs.getString("category"),
                 rs.getString("priority"), rs.getBoolean("all_day"), localTime == null ? null : localTime.toString(),
                 (Integer) rs.getObject("reminder_offset_minutes"), rs.getObject("original_local_date", LocalDate.class),
                 rs.getObject("current_local_date", LocalDate.class), originalDue == null ? null : originalDue.toInstant(),
@@ -565,6 +584,15 @@ public class TaskService {
 
     private LocalDate today(ZoneId zone) {
         return LocalDate.now(clock.withZone(zone));
+    }
+
+    private List<Integer> weekdays(Integer mask) {
+        if (mask == null) return List.of();
+        List<Integer> values = new ArrayList<>();
+        for (int day = 1; day <= 7; day++) {
+            if ((mask & (1 << (day - 1))) != 0) values.add(day);
+        }
+        return values;
     }
 
     private String upper(String value) {

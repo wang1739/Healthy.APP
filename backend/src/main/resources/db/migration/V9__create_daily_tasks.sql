@@ -87,8 +87,8 @@ CREATE TABLE task_instances (
   CONSTRAINT ck_task_instance_category CHECK (category IN ('HEALTH','WORK','LIFE','STUDY','OTHER')),
   CONSTRAINT ck_task_instance_priority CHECK (priority IN ('NORMAL','IMPORTANT','URGENT')),
   CONSTRAINT ck_task_instance_time CHECK (
-    (all_day=TRUE AND local_time IS NULL AND original_due_at IS NULL AND current_due_at IS NULL) OR
-    (all_day=FALSE AND local_time IS NOT NULL AND original_due_at IS NOT NULL AND current_due_at IS NOT NULL)),
+    (all_day=TRUE AND local_time IS NULL AND current_due_at IS NULL) OR
+    (all_day=FALSE AND local_time IS NOT NULL AND current_due_at IS NOT NULL)),
   CONSTRAINT ck_task_instance_reminder CHECK (reminder_offset_minutes IS NULL OR reminder_offset_minutes IN (0,5,15,30,60)),
   CONSTRAINT ck_task_instance_postpone CHECK (postpone_count >= 0),
   CONSTRAINT ck_task_instance_version CHECK (version >= 0)

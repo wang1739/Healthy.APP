@@ -489,13 +489,17 @@ class ApiClient {
     String action,
     Map<String, dynamic> data,
     String idempotencyKey,
-  ) => _taskMutation(
-    'POST',
-    '/tasks/instances/$id/$action',
-    data: data,
-    headers: {'Idempotency-Key': idempotencyKey},
-    includeTimezone: true,
-  );
+  ) async {
+    final timezone = await _timezone();
+    final usesQuery = action == 'complete' || action == 'reopen';
+    return _taskMutation(
+      'POST',
+      '/tasks/instances/$id/$action',
+      data: usesQuery ? data : {...data, 'timezone': timezone},
+      queryParameters: usesQuery ? {'timezone': timezone} : null,
+      headers: {'Idempotency-Key': idempotencyKey},
+    );
+  }
 
   Future<void> deleteTaskInstance(String id) async {
     await _authorized(
