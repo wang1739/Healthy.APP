@@ -8,6 +8,7 @@ import 'package:healthy/features/hydration/presentation/hydration_page.dart';
 import 'package:healthy/features/hydration/application/hydration_reminder_scheduler.dart';
 import 'package:healthy/features/plan/presentation/plan_page.dart';
 import 'package:healthy/features/report/presentation/report_page.dart';
+import 'package:healthy/features/report/domain/report_data.dart';
 import 'package:healthy/features/today/presentation/today_page.dart';
 import 'package:healthy/features/activity/presentation/activity_page.dart';
 import 'package:healthy/features/sleep/application/sleep_reminder_scheduler.dart';
@@ -74,6 +75,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   int _activityRevision = 0;
   int _sleepRevision = 0;
   int _taskRevision = 0;
+  String? _reportIntent;
 
   @override
   void initState() {
@@ -95,6 +97,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     if (pending != null) {
       _index = pending.destination;
       _autoPreview = pending.destination == 2;
+      if (pending.destination == 3) _reportIntent = pending.label;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           if (pending.label == '记录运动') {
@@ -309,7 +312,16 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         onConfirmed: () => setState(() => _index = 0),
         onEditProfile: widget.session.openProfile,
       ),
-      ReportPage(onProtectedAction: (label) => _requestFeature(label, 3)),
+      ReportPage(
+        api: widget.session.api,
+        access: widget.session.access,
+        accountKey: widget.session.accountKey,
+        onProtectedAction: (label) => _requestFeature(label, 3),
+        onOpenSource: _openReportSource,
+        initialIntent: _reportIntent,
+        onIntentHandled: () => _reportIntent = null,
+        active: _index == 3,
+      ),
       AccountPage(session: widget.session),
       HydrationPage(
         api: widget.session.api,
@@ -455,6 +467,28 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         ),
       ),
     );
+  }
+
+  void _openReportSource(ReportSource source) {
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    switch (source.sourceType) {
+      case 'PLAN_VERSION':
+      case 'WEIGHT_MEASUREMENT':
+        setState(() => _index = 2);
+      case 'MEAL_ENTRY':
+        setState(() => _index = 1);
+      case 'HYDRATION_ENTRY':
+        setState(() => _index = 5);
+      case 'ACTIVITY_RECORD':
+        _openActivity();
+      case 'SLEEP_RECORD':
+        _openSleep();
+      case 'TASK_INSTANCE':
+        _openTasks(date: source.localDate, instanceId: source.sourceId);
+      default:
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('原始记录已删除')));
+    }
   }
 }
 
