@@ -76,7 +76,9 @@ class SessionController extends ChangeNotifier {
         ? UserAccess.profileComplete
         : UserAccess.profileIncomplete;
     await _loadProfileState();
-    stage = access == UserAccess.profileIncomplete
+    final personalTaskFlow =
+        _pendingFeature?.label == '创建任务' || _pendingFeature?.label == '查看每日任务';
+    stage = access == UserAccess.profileIncomplete && !personalTaskFlow
         ? AppStage.profile
         : AppStage.home;
     notifyListeners();

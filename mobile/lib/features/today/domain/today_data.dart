@@ -72,7 +72,7 @@ class TodayData {
     hydration: TodayModuleData.fromJson(_map(json['hydration'])),
     activity: TodayModuleData.fromJson(_map(json['activity'])),
     sleep: TodayModuleData.fromJson(_map(json['sleep'])),
-    tasks: TodayModuleData.fromJson(_map(json['tasks'])),
+    tasks: TodayTaskData.fromJson(_map(json['tasks'])),
     nextAction: TodayNextAction.fromJson(_map(json['nextAction'])),
   );
 
@@ -83,7 +83,7 @@ class TodayData {
   final TodayModuleData hydration;
   final TodayModuleData activity;
   final TodayModuleData sleep;
-  final TodayModuleData tasks;
+  final TodayTaskData tasks;
   final TodayNextAction nextAction;
 }
 
@@ -239,6 +239,70 @@ class TodayModuleData {
   final String? qualityLabel;
   final int? napDurationMinutes;
   final bool? hasEnoughTrendData;
+}
+
+class TodayTaskData {
+  const TodayTaskData({
+    required this.status,
+    this.totalCount = 0,
+    this.completedCount = 0,
+    this.pendingCount = 0,
+    this.overdueCount = 0,
+    this.nextTask,
+    this.hasPlanUpdate = false,
+    this.message,
+  });
+  factory TodayTaskData.fromJson(Map<String, dynamic> json) => TodayTaskData(
+    status: _status(json['status']),
+    totalCount: (json['totalCount'] as num?)?.toInt() ?? 0,
+    completedCount: (json['completedCount'] as num?)?.toInt() ?? 0,
+    pendingCount: (json['pendingCount'] as num?)?.toInt() ?? 0,
+    overdueCount: (json['overdueCount'] as num?)?.toInt() ?? 0,
+    nextTask: json['nextTask'] is Map
+        ? TodayTaskNext.fromJson(_map(json['nextTask']))
+        : null,
+    hasPlanUpdate: json['hasPlanUpdate'] == true,
+    message: json['message']?.toString(),
+  );
+  final TodayModuleStatus status;
+  final int totalCount;
+  final int completedCount;
+  final int pendingCount;
+  final int overdueCount;
+  final TodayTaskNext? nextTask;
+  final bool hasPlanUpdate;
+  final String? message;
+}
+
+class TodayTaskNext {
+  const TodayTaskNext({
+    required this.id,
+    required this.title,
+    required this.date,
+    this.dueAt,
+    this.category,
+    this.source,
+  });
+  factory TodayTaskNext.fromJson(Map<String, dynamic> json) => TodayTaskNext(
+    id: json['id']?.toString() ?? '',
+    title: json['title']?.toString() ?? '下一项任务',
+    date:
+        DateTime.tryParse(
+          (json['currentLocalDate'] ?? json['date'])?.toString() ?? '',
+        ) ??
+        DateTime(1970),
+    dueAt: json['dueAt'] == null
+        ? null
+        : DateTime.tryParse(json['dueAt'].toString()),
+    category: json['category']?.toString(),
+    source: json['source']?.toString(),
+  );
+  final String id;
+  final String title;
+  final DateTime date;
+  final DateTime? dueAt;
+  final String? category;
+  final String? source;
 }
 
 class TodayNextAction {

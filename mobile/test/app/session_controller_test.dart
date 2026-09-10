@@ -131,4 +131,17 @@ void main() {
     expect(first.accountKey, isNot(other.accountKey));
     expect(first.accountKey, isNot(contains(phone)));
   });
+
+  test('游客登录为未建档账号后可直接恢复创建个人任务', () async {
+    final session = SessionController(_FakeApiClient(currentStep: 2));
+    session.startRestrictedFlow(label: '创建任务', destination: 0);
+
+    await session.acceptLogin(
+      const LoginResult(profileComplete: false, phone: '13800138000'),
+    );
+
+    expect(session.access, UserAccess.profileIncomplete);
+    expect(session.stage, AppStage.home);
+    expect(session.pendingFeature?.label, '创建任务');
+  });
 }

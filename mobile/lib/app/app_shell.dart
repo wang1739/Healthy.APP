@@ -12,17 +12,21 @@ import 'package:healthy/features/today/presentation/today_page.dart';
 import 'package:healthy/features/activity/presentation/activity_page.dart';
 import 'package:healthy/features/sleep/application/sleep_reminder_scheduler.dart';
 import 'package:healthy/features/sleep/presentation/sleep_page.dart';
+import 'package:healthy/features/tasks/application/task_notification_scheduler.dart';
+import 'package:healthy/features/tasks/presentation/tasks_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({
     required this.session,
     this.sleepReminderScheduler,
+    this.taskNotificationScheduler,
     super.key,
   });
 
   final SessionController session;
   final SleepReminderScheduler? sleepReminderScheduler;
+  final TaskNotificationScheduler? taskNotificationScheduler;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -69,6 +73,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   bool _autoPreview = false;
   int _activityRevision = 0;
   int _sleepRevision = 0;
+  int _taskRevision = 0;
 
   @override
   void initState() {
@@ -77,8 +82,15 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     widget.session.addListener(_sessionChanged);
     HydrationReminderScheduler.openHydration.addListener(_openHydration);
     SleepReminderScheduler.openSleep.addListener(_openSleepNotification);
+    TaskNotificationScheduler.openTask.addListener(_openTaskNotification);
     _syncSleepReminder();
+    _syncTaskNotifications();
     if (HydrationReminderScheduler.openHydration.value > 0) _index = 5;
+    if (TaskNotificationScheduler.openTask.value != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _openTaskNotification(),
+      );
+    }
     final pending = widget.session.consumePendingFeature();
     if (pending != null) {
       _index = pending.destination;
@@ -89,6 +101,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             _openActivity(record: true);
           } else if (pending.label == '记录睡眠') {
             _openSleep(record: true);
+          } else if (pending.label == '创建任务') {
+            _openTasks(create: true);
+          } else if (pending.label == '添加健康任务') {
+            _openTasks();
           }
           ScaffoldMessenger.of(
             context,
@@ -102,6 +118,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   void _sessionChanged() {
     if (mounted) {
       _syncSleepReminder();
+      _syncTaskNotifications();
       setState(() {});
     }
   }
@@ -115,9 +132,21 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     );
   }
 
+  void _syncTaskNotifications() {
+    if (widget.session.access == UserAccess.guest) return;
+    unawaited(
+      (widget.taskNotificationScheduler ?? TaskNotificationScheduler.instance)
+          .sync(widget.session.accountKey)
+          .catchError((_) {}),
+    );
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _syncSleepReminder();
+    if (state == AppLifecycleState.resumed) {
+      _syncSleepReminder();
+      _syncTaskNotifications();
+    }
   }
 
   void _openHydration() {
@@ -128,12 +157,21 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     if (mounted) _openSleep();
   }
 
+  void _openTaskNotification() {
+    final target = TaskNotificationScheduler.openTask.value;
+    if (mounted && target != null) {
+      TaskNotificationScheduler.openTask.value = null;
+      _openTasks(date: target.date, instanceId: target.instanceId);
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     widget.session.removeListener(_sessionChanged);
     HydrationReminderScheduler.openHydration.removeListener(_openHydration);
     SleepReminderScheduler.openSleep.removeListener(_openSleepNotification);
+    TaskNotificationScheduler.openTask.removeListener(_openTaskNotification);
     super.dispose();
   }
 
@@ -247,6 +285,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             ? _openSleep(record: true)
             : _requestFeature('记录睡眠', 0),
         sleepRevision: _sleepRevision,
+        taskRevision: _taskRevision,
+        onOpenTasks: () => _openTasks(),
+        onOpenTask: (date, id) => _openTasks(date: date, instanceId: id),
+        onCreateTask: () => widget.session.access == UserAccess.guest
+            ? _requestFeature('创建任务', 0)
+            : _openTasks(create: true),
       ),
       NutritionPage(
         api: widget.session.api,
@@ -373,6 +417,41 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           openRecordOnStart: record,
           onChanged: () => setState(() => _sleepRevision++),
           reminderScheduler: widget.sleepReminderScheduler,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openTasks({
+    bool create = false,
+    DateTime? date,
+    String? instanceId,
+  }) async {
+    if (widget.session.access == UserAccess.guest &&
+        (create || instanceId != null)) {
+      await _requestFeature(create ? '创建任务' : '查看每日任务', 0);
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => TasksPage(
+          api: widget.session.api,
+          access: widget.session.access,
+          accountKey: widget.session.accountKey,
+          onProtectedAction: (label) => _requestFeature(label, 0),
+          onHealthTaskRequested: (label) {
+            if (widget.session.access == UserAccess.profileIncomplete) {
+              _requestFeature('添加健康任务', 0);
+            } else {
+              setState(() => _index = 2);
+              Navigator.pop(context);
+            }
+          },
+          initialDate: date,
+          initialInstanceId: instanceId,
+          openEditorOnStart: create,
+          notificationScheduler: widget.taskNotificationScheduler,
+          onChanged: () => setState(() => _taskRevision++),
         ),
       ),
     );

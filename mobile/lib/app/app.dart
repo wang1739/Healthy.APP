@@ -9,6 +9,7 @@ import 'package:healthy/core/api/api_client.dart';
 import 'package:healthy/core/theme/app_theme.dart';
 import 'package:healthy/features/hydration/application/hydration_reminder_scheduler.dart';
 import 'package:healthy/features/sleep/application/sleep_reminder_scheduler.dart';
+import 'package:healthy/features/tasks/application/task_notification_scheduler.dart';
 
 class HealthyApp extends StatefulWidget {
   const HealthyApp({super.key});
@@ -27,14 +28,26 @@ class _HealthyAppState extends State<HealthyApp> {
     _session = SessionController(
       ApiClient.instance,
       onLogout: () async {
-        await HydrationReminderScheduler.instance.cancelHydrationReminders();
-        await SleepReminderScheduler.instance.cancelActiveAccount();
+        await Future.wait([
+          HydrationReminderScheduler.instance
+              .cancelHydrationReminders()
+              .catchError((_) {}),
+          SleepReminderScheduler.instance.cancelActiveAccount().catchError(
+            (_) {},
+          ),
+          TaskNotificationScheduler.instance.cancelActiveAccount().catchError(
+            (_) {},
+          ),
+        ]);
       },
     );
     unawaited(
       HydrationReminderScheduler.instance.initialize().catchError((_) {}),
     );
     unawaited(SleepReminderScheduler.instance.initialize().catchError((_) {}));
+    unawaited(
+      TaskNotificationScheduler.instance.initialize().catchError((_) {}),
+    );
     _router = buildRouter(_session);
     _session.bootstrap();
   }
