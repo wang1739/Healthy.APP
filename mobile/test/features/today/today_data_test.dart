@@ -119,4 +119,30 @@ void main() {
     expect(sleep.qualityLabel, '良好');
     expect(sleep.hasEnoughTrendData, isTrue);
   });
+
+  test('解析 Today 每日任务专用摘要和下一任务', () {
+    final json = response();
+    json['tasks'] = {
+      'status': 'READY',
+      'totalCount': 5,
+      'completedCount': 2,
+      'pendingCount': 2,
+      'overdueCount': 1,
+      'hasPlanUpdate': true,
+      'nextTask': {
+        'id': 'i1',
+        'title': '团队会议',
+        'currentLocalDate': '2026-09-08',
+        'dueAt': '2026-09-08T02:00:00Z',
+        'category': 'WORK',
+        'source': 'USER',
+      },
+    };
+    final tasks = TodayData.fromJson(json).tasks;
+    expect(tasks.completedCount, 2);
+    expect(tasks.pendingCount, 2);
+    expect(tasks.overdueCount, 1);
+    expect(tasks.nextTask?.title, '团队会议');
+    expect(tasks.hasPlanUpdate, isTrue);
+  });
 }

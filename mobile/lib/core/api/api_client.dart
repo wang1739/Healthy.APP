@@ -6,6 +6,7 @@ import 'package:healthy/features/nutrition/domain/nutrition_data.dart';
 import 'package:healthy/features/hydration/domain/hydration_data.dart';
 import 'package:healthy/features/activity/domain/activity_data.dart';
 import 'package:healthy/features/sleep/domain/sleep_data.dart';
+import 'package:healthy/features/tasks/domain/task_data.dart';
 import 'package:healthy/features/today/domain/today_data.dart';
 
 class ApiClient {
@@ -376,6 +377,261 @@ class ApiClient {
       Map<String, dynamic>.from(response.data as Map),
     );
   }
+
+  Future<TaskDay> getTaskDay(DateTime date) async {
+    final response = await _authorized(
+      'GET',
+      '/tasks/days/${formatLocalDate(date)}',
+      queryParameters: {'timezone': await _timezone()},
+    );
+    return TaskDay.fromJson(Map<String, dynamic>.from(response.data as Map));
+  }
+
+  Future<TaskWeek> getTaskWeek(DateTime date) async {
+    final response = await _authorized(
+      'GET',
+      '/tasks/weeks/${formatLocalDate(date)}',
+      queryParameters: {'timezone': await _timezone()},
+    );
+    return TaskWeek.fromJson(Map<String, dynamic>.from(response.data as Map));
+  }
+
+  Future<List<TaskNotification>> getTaskNotifications({
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final response = await _authorized(
+      'GET',
+      '/tasks/notifications',
+      queryParameters: {
+        'from': formatLocalDate(from),
+        'to': formatLocalDate(to),
+        'timezone': await _timezone(),
+      },
+    );
+    final data = response.data;
+    final items = data is List ? data : (data as Map?)?['items'] as List? ?? [];
+    return items
+        .map(
+          (item) =>
+              TaskNotification.fromJson(Map<String, dynamic>.from(item as Map)),
+        )
+        .toList(growable: false);
+  }
+
+  Future<TaskMutationResult> createTask(
+    Map<String, dynamic> data, {
+    required String idempotencyKey,
+  }) => _taskMutation(
+    'POST',
+    '/tasks',
+    data: _taskCreateData(data),
+    headers: {'Idempotency-Key': idempotencyKey},
+    includeTimezone: true,
+  );
+
+  Future<TaskMutationResult> updateTaskInstance(
+    String id,
+    Map<String, dynamic> data,
+  ) => _taskMutation(
+    'PUT',
+    '/tasks/instances/$id',
+    data: _taskInstanceUpdateData(data),
+    includeTimezone: true,
+  );
+
+  Future<TaskMutationResult> updateTaskTemplate(
+    String id,
+    Map<String, dynamic> data,
+  ) => _taskMutation(
+    'PUT',
+    '/tasks/templates/$id',
+    data: _taskTemplateUpdateData(data),
+    includeTimezone: true,
+  );
+
+  Future<TaskMutationResult> completeTask(
+    String id, {
+    required String idempotencyKey,
+  }) => _taskStatus(id, 'complete', const {}, idempotencyKey);
+
+  Future<TaskMutationResult> reopenTask(
+    String id, {
+    required String idempotencyKey,
+  }) => _taskStatus(id, 'reopen', const {}, idempotencyKey);
+
+  Future<TaskMutationResult> skipTask(
+    String id, {
+    required String idempotencyKey,
+    String? reason,
+  }) => _taskStatus(id, 'skip', {
+    if (reason?.isNotEmpty == true) 'reason': reason,
+  }, idempotencyKey);
+
+  Future<TaskMutationResult> postponeTask(
+    String id,
+    Map<String, dynamic> data, {
+    required String idempotencyKey,
+  }) => _taskStatus(
+    id,
+    'postpone',
+    {
+      ...data,
+      'type': data['mode'] == 'LATER_30'
+          ? 'LATER'
+          : (data['type'] ?? data['mode']),
+    }..remove('mode'),
+    idempotencyKey,
+  );
+
+  Future<TaskMutationResult> _taskStatus(
+    String id,
+    String action,
+    Map<String, dynamic> data,
+    String idempotencyKey,
+  ) => _taskMutation(
+    'POST',
+    '/tasks/instances/$id/$action',
+    data: data,
+    headers: {'Idempotency-Key': idempotencyKey},
+    includeTimezone: true,
+  );
+
+  Future<void> deleteTaskInstance(String id) async {
+    await _authorized(
+      'DELETE',
+      '/tasks/instances/$id',
+      queryParameters: {'timezone': await _timezone()},
+    );
+  }
+
+  Future<void> deleteTaskTemplate(
+    String id, {
+    required DateTime effectiveDate,
+  }) async {
+    await _authorized(
+      'DELETE',
+      '/tasks/templates/$id',
+      queryParameters: {
+        'effectiveDate': formatLocalDate(effectiveDate),
+        'timezone': await _timezone(),
+      },
+    );
+  }
+
+  Future<TaskSettings> getTaskSettings() async {
+    final response = await _authorized('GET', '/tasks/settings');
+    return TaskSettings.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<TaskSettings> updateTaskSettings(Map<String, dynamic> data) async {
+    final response = await _authorized(
+      'PUT',
+      '/tasks/settings',
+      data: {
+        ...data,
+        if (data.containsKey('version')) 'expectedVersion': data['version'],
+      }..remove('version'),
+    );
+    return TaskSettings.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<void> reportTaskNotificationEvents(
+    List<Map<String, dynamic>> events, {
+    required String idempotencyKey,
+  }) async {
+    await _authorized(
+      'POST',
+      '/tasks/notification-events',
+      data: {'events': events},
+      headers: {'Idempotency-Key': idempotencyKey},
+    );
+  }
+
+  Future<void> adoptTaskPlanUpdates({
+    required DateTime date,
+    required String idempotencyKey,
+  }) async {
+    await _authorized(
+      'POST',
+      '/tasks/plan-updates/adopt',
+      data: {'date': formatLocalDate(date), 'timezone': await _timezone()},
+      headers: {'Idempotency-Key': idempotencyKey},
+    );
+  }
+
+  Future<TaskMutationResult> _taskMutation(
+    String method,
+    String path, {
+    Map<String, dynamic>? data,
+    Map<String, dynamic>? queryParameters,
+    Map<String, String>? headers,
+    bool includeTimezone = false,
+  }) async {
+    final timezone = await _timezone();
+    final response = await _authorized(
+      method,
+      path,
+      data: data == null
+          ? null
+          : {...data, if (includeTimezone) 'timezone': timezone},
+      queryParameters: {
+        ...?queryParameters,
+        if (method == 'DELETE') 'timezone': timezone,
+      },
+      headers: headers,
+    );
+    return TaskMutationResult.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Map<String, dynamic> _taskCreateData(Map<String, dynamic> data) =>
+      {
+          ...data,
+          if (data.containsKey('localDate')) 'date': data['localDate'],
+          if (data['weekdays'] is List)
+            'weekdaysMask': _taskWeekdaysMask(data['weekdays'] as List),
+        }
+        ..remove('localDate')
+        ..remove('weekdays');
+
+  Map<String, dynamic> _taskInstanceUpdateData(Map<String, dynamic> data) => {
+    for (final key in const [
+      'title',
+      'note',
+      'category',
+      'priority',
+      'allDay',
+      'localTime',
+      'reminderOffsetMinutes',
+    ])
+      if (data.containsKey(key)) key: data[key],
+    if (data.containsKey('version')) 'expectedVersion': data['version'],
+  };
+
+  Map<String, dynamic> _taskTemplateUpdateData(Map<String, dynamic> data) =>
+      {
+          ...data,
+          if (data.containsKey('localDate') || data.containsKey('date'))
+            'effectiveDate': data['localDate'] ?? data['date'],
+          if (data.containsKey('version')) 'expectedVersion': data['version'],
+          if (data['weekdays'] is List)
+            'weekdaysMask': _taskWeekdaysMask(data['weekdays'] as List),
+        }
+        ..remove('localDate')
+        ..remove('date')
+        ..remove('version')
+        ..remove('weekdays');
+
+  int _taskWeekdaysMask(List weekdays) => weekdays.fold<int>(0, (mask, day) {
+    final value = day is num ? day.toInt() : int.tryParse('$day') ?? 0;
+    return value >= 1 && value <= 7 ? mask | (1 << (value - 1)) : mask;
+  });
 
   Future<HydrationDay> _hydrationDayRequest(
     String method,

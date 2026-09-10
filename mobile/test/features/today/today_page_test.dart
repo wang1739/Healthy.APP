@@ -84,6 +84,9 @@ Future<void> _pumpPage(
   VoidCallback? onRecordActivity,
   VoidCallback? onOpenSleep,
   VoidCallback? onRecordSleep,
+  VoidCallback? onOpenTasks,
+  void Function(DateTime, String)? onOpenTask,
+  VoidCallback? onCreateTask,
 }) async {
   await tester.binding.setSurfaceSize(Size(width, 900));
   final app = MaterialApp(
@@ -105,6 +108,9 @@ Future<void> _pumpPage(
           onRecordActivity: onRecordActivity,
           onOpenSleep: onOpenSleep,
           onRecordSleep: onRecordSleep,
+          onOpenTasks: onOpenTasks,
+          onOpenTask: onOpenTask,
+          onCreateTask: onCreateTask,
         ),
       ),
     ),
@@ -135,7 +141,7 @@ void main() {
     expect(requested, '查看个性化今日目标');
   });
 
-  testWidgets('已登录未建档显示完善档案行动且不请求接口', (tester) async {
+  testWidgets('已登录未建档显示完善档案行动且仍请求个人任务摘要', (tester) async {
     final api = _FakeApi(overview());
     String? requested;
     await _pumpPage(
@@ -145,7 +151,7 @@ void main() {
       onProtectedAction: (label) => requested = label,
     );
 
-    expect(api.todayCalls, 0);
+    expect(api.todayCalls, 1);
     expect(find.text('完善健康档案'), findsWidgets);
     await tester.tap(find.widgetWithText(FilledButton, '完善健康档案'));
     expect(requested, '完善健康档案');
@@ -180,6 +186,8 @@ void main() {
       300,
       scrollable: find.byType(Scrollable).first,
     );
+    await tester.ensureVisible(action);
+    await tester.pump();
     await tester.tap(action);
     expect(opened, isTrue);
   });
@@ -431,5 +439,48 @@ void main() {
     final theme = Theme.of(tester.element(find.byType(TodayPage)));
     final shape = theme.dialogTheme.shape! as RoundedRectangleBorder;
     expect(shape.borderRadius, BorderRadius.circular(6));
+  });
+
+  testWidgets('任务摘要、下一任务和新增任务使用三个真实入口', (tester) async {
+    final json = overview(moduleStatus: 'READY');
+    json['tasks'] = {
+      'status': 'READY',
+      'totalCount': 5,
+      'completedCount': 2,
+      'pendingCount': 2,
+      'overdueCount': 1,
+      'nextTask': {
+        'id': 'i1',
+        'title': '团队会议',
+        'currentLocalDate': '2026-09-08',
+      },
+    };
+    var opened = 0;
+    String? instance;
+    var created = 0;
+    await _pumpPage(
+      tester,
+      _FakeApi(json),
+      UserAccess.profileComplete,
+      onOpenTasks: () => opened++,
+      onOpenTask: (_, id) => instance = id,
+      onCreateTask: () => created++,
+    );
+    expect(find.text('2 / 5 已完成'), findsOneWidget);
+    expect(find.text('2 项待完成 · 1 项逾期'), findsOneWidget);
+    await tester.tap(find.text('下一项：团队会议'));
+    expect(instance, 'i1');
+    await tester.tap(
+      find.ancestor(of: find.text('每日任务'), matching: find.byType(InkWell)),
+    );
+    expect(opened, 1);
+    final action = find.text('新增任务');
+    await tester.scrollUntilVisible(
+      action,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(action);
+    expect(created, 1);
   });
 }

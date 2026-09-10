@@ -10,6 +10,8 @@ import 'package:healthy/features/today/domain/today_data.dart';
 import 'package:healthy/features/activity/domain/activity_data.dart';
 import 'package:healthy/features/sleep/application/sleep_reminder_scheduler.dart';
 import 'package:healthy/features/sleep/domain/sleep_data.dart';
+import 'package:healthy/features/tasks/application/task_notification_scheduler.dart';
+import 'package:healthy/features/tasks/domain/task_data.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _TodayApi extends ApiClient {
@@ -86,13 +88,47 @@ class _TodayApi extends ApiClient {
     'days': const [],
     'planState': 'NO_PLAN',
   });
+
+  @override
+  Future<TaskDay> getTaskDay(DateTime date) async => TaskDay.fromJson({
+    'date': formatLocalDate(date),
+    'status': 'EMPTY',
+    'timeline': const [],
+    'allDay': const [],
+  });
+
+  @override
+  Future<TaskWeek> getTaskWeek(DateTime date) async => TaskWeek.fromJson({
+    'startDate': formatLocalDate(date),
+    'endDate': formatLocalDate(date),
+  });
+
+  @override
+  Future<TaskSettings> getTaskSettings() async => const TaskSettings();
+
+  @override
+  Future<List<TaskNotification>> getTaskNotifications({
+    required DateTime from,
+    required DateTime to,
+  }) async => const [];
 }
+
+TaskNotificationScheduler _taskScheduler(_TodayApi api) =>
+    TaskNotificationScheduler(
+      api: api,
+      loadNotifications: () async => [],
+      loadSettings: () async => const TaskSettings(),
+      schedule: (_, _, _, _) async {},
+      cancel: (_) async {},
+      reportEvents: (_) async {},
+    );
 
 void main() {
   late SessionController session;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
+    TaskNotificationScheduler.openTask.value = null;
     session = SessionController(ApiClient());
     await session.skipLogin();
   });
@@ -341,5 +377,46 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(cancellations, 14);
+  });
+
+  testWidgets('Today 新增任务进入表单且不增加底部导航', (tester) async {
+    final api = _TodayApi();
+    session = SessionController(api);
+    session.completeProfile();
+    session.consumePendingFeature();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          backendStatusProvider.overrideWith(
+            (ref) async => BackendStatus.connected,
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: AppShell(
+            session: session,
+            taskNotificationScheduler: _taskScheduler(api),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final action = find.text('新增任务');
+    await tester.scrollUntilVisible(
+      action,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(action);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('task-editor-save')), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).destinations,
+      hasLength(6),
+    );
   });
 }

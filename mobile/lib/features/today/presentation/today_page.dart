@@ -21,8 +21,12 @@ class TodayPage extends ConsumerStatefulWidget {
     this.onRecordActivity,
     this.onOpenSleep,
     this.onRecordSleep,
+    this.onOpenTasks,
+    this.onOpenTask,
+    this.onCreateTask,
     this.activityRevision = 0,
     this.sleepRevision = 0,
+    this.taskRevision = 0,
     this.now,
     super.key,
   });
@@ -37,8 +41,12 @@ class TodayPage extends ConsumerStatefulWidget {
   final VoidCallback? onRecordActivity;
   final VoidCallback? onOpenSleep;
   final VoidCallback? onRecordSleep;
+  final VoidCallback? onOpenTasks;
+  final void Function(DateTime date, String instanceId)? onOpenTask;
+  final VoidCallback? onCreateTask;
   final int activityRevision;
   final int sleepRevision;
+  final int taskRevision;
   final DateTime Function()? now;
 
   @override
@@ -63,7 +71,8 @@ class _TodayPageState extends ConsumerState<TodayPage>
     if (oldWidget.access != widget.access ||
         oldWidget.api != widget.api ||
         oldWidget.activityRevision != widget.activityRevision ||
-        oldWidget.sleepRevision != widget.sleepRevision) {
+        oldWidget.sleepRevision != widget.sleepRevision ||
+        oldWidget.taskRevision != widget.taskRevision) {
       _loadPrivateData();
     }
   }
@@ -83,7 +92,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
   }
 
   void _loadPrivateData() {
-    if (widget.access != UserAccess.profileComplete) return;
+    if (widget.access == UserAccess.guest) return;
     Future.microtask(
       () => ref.read(todayControllerProvider(widget.api)).load(_date),
     );
@@ -108,6 +117,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
       content.addAll(_guest());
     } else if (widget.access == UserAccess.profileIncomplete) {
       content.addAll(_incomplete());
+      content.addAll(_taskContent());
     } else {
       content.addAll(_privateContent());
     }
@@ -172,6 +182,25 @@ class _TodayPageState extends ConsumerState<TodayPage>
         ],
       ),
     ),
+    const SizedBox(height: AppSpacing.medium),
+    _card(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: widget.onOpenTasks,
+        child: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '每日任务示例',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            SizedBox(height: 8),
+            Text('上午 10:00 团队会议'),
+            Text('今日待办：整理房间'),
+          ],
+        ),
+      ),
+    ),
   ];
 
   List<Widget> _incomplete() => [
@@ -194,6 +223,13 @@ class _TodayPageState extends ConsumerState<TodayPage>
       ),
     ),
   ];
+
+  List<Widget> _taskContent() {
+    final state = ref.watch(todayControllerProvider(widget.api)).state;
+    final tasks = state.data?.tasks;
+    if (tasks == null) return const [];
+    return [const SizedBox(height: AppSpacing.medium), _taskCard(tasks)];
+  }
 
   List<Widget> _privateContent() {
     final controller = ref.watch(todayControllerProvider(widget.api));
@@ -405,6 +441,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
           data.weight.message,
           emptyText: '暂无最新体重',
         ),
+        _taskCard(data.tasks),
         _moduleCard(
           '营养',
           data.plan.proteinG == null ||
@@ -427,6 +464,49 @@ class _TodayPageState extends ConsumerState<TodayPage>
       );
     },
   );
+
+  Widget _taskCard(TodayTaskData tasks) {
+    final next = tasks.nextTask;
+    return Semantics(
+      button: true,
+      label: '每日任务摘要，点击查看每日任务',
+      child: _card(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: widget.onOpenTasks,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.task_alt, color: AppColors.green),
+                  SizedBox(width: 8),
+                  Text('每日任务', style: TextStyle(fontWeight: FontWeight.w700)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (tasks.status == TodayModuleStatus.error)
+                Text(tasks.message ?? '任务数据暂时无法加载')
+              else ...[
+                Text('${tasks.completedCount} / ${tasks.totalCount} 已完成'),
+                Text('${tasks.pendingCount} 项待完成 · ${tasks.overdueCount} 项逾期'),
+                if (next != null) ...[
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: () =>
+                        widget.onOpenTask?.call(next.date, next.id),
+                    icon: const Icon(Icons.arrow_forward),
+                    label: Text('下一项：${next.title}'),
+                  ),
+                ],
+                if (tasks.hasPlanUpdate) const Text('健康计划已更新'),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _moduleCard(
     String title,
@@ -543,6 +623,7 @@ class _TodayPageState extends ConsumerState<TodayPage>
           _quickButton('记录饮水', Icons.water_drop_outlined),
           _quickButton('记录运动', Icons.directions_run),
           _quickButton('记录睡眠', Icons.bedtime_outlined),
+          _quickButton('新增任务', Icons.add_task),
         ],
       ),
     ],
@@ -557,6 +638,8 @@ class _TodayPageState extends ConsumerState<TodayPage>
         ? widget.onRecordActivity
         : label == '记录睡眠' && widget.onRecordSleep != null
         ? widget.onRecordSleep
+        : label == '新增任务' && widget.onCreateTask != null
+        ? widget.onCreateTask
         : () => widget.onProtectedAction(label),
     icon: Icon(icon),
     label: Text(label),
