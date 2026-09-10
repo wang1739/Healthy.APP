@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -47,7 +48,7 @@ public class ReportService {
         this.calculator = calculator; this.clock = clock; this.transactions = transactions;
     }
 
-    public synchronized ReportDtos.ReportResponse generate(String userId, String key, ReportDtos.GenerateRequest request) {
+    public ReportDtos.ReportResponse generate(String userId, String key, ReportDtos.GenerateRequest request) {
         validateKey(key);
         if (request == null) throw invalid("request", "请提交报告周期");
         Instant cutoff = clock.instant();
@@ -63,31 +64,39 @@ public class ReportService {
         ensureProfile(userId);
         ReportDtos.Facts facts = collector.collect(userId, period);
         String hash = hash(facts);
-        List<Row> latest = rows("WHERE user_id=? AND report_type=? AND period_start=? AND deleted_at IS NULL ORDER BY version DESC LIMIT 1",
+        List<Row> history = rows("WHERE user_id=? AND report_type=? AND period_start=? ORDER BY version DESC",
                 userId, period.type(), Date.valueOf(period.start()));
+        List<Row> latest = history.stream().filter(row -> row.deletedAt == null).limit(1).toList();
         if (!latest.isEmpty() && latest.get(0).inputHash.equals(hash)) return response(latest.get(0), false, false);
 
         ReportDtos.Period previousPeriod = periods.resolve(period.type(), period.previousStart(), period.timezone(), cutoff);
         ReportDtos.Facts previous = collector.collect(userId, previousPeriod);
         String displayName = jdbc.queryForObject("SELECT display_name FROM users WHERE id=?", String.class, userId);
         ReportDtos.Snapshot snapshot = calculator.calculate(facts, previous, displayName);
-        int version = latest.isEmpty() ? 1 : latest.get(0).version + 1;
+        int version = history.isEmpty() ? 1 : history.get(0).version + 1;
         String id = UUID.randomUUID().toString();
         Instant createdAt = clock.instant();
-        transactions.executeWithoutResult(ignored -> {
-            jdbc.update("""
-                    INSERT INTO health_reports(id,user_id,report_type,period_start,period_end,timezone,period_status,version,
-                      rules_version,data_cutoff_at,input_hash,snapshot_json,idempotency_key,created_at)
-                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                    """, id, userId, period.type(), Date.valueOf(period.start()), Date.valueOf(period.end()), period.timezone(),
-                    period.status(), version, ReportCalculator.RULES_VERSION, Timestamp.from(period.dataCutoffAt()), hash,
-                    json.writeValueAsString(snapshot), key.trim(), Timestamp.from(createdAt));
-            for (ReportDtos.Source source : facts.sources()) jdbc.update("""
-                    INSERT INTO health_report_sources(report_id,section_code,metric_code,source_type,source_id,source_local_date,location_label)
-                    VALUES(?,?,?,?,?,?,?)
-                    """, id, source.section(), source.metric(), source.sourceType(), source.sourceId(),
-                    source.localDate() == null ? null : Date.valueOf(source.localDate()), source.locationLabel());
-        });
+        try {
+            transactions.executeWithoutResult(ignored -> {
+                jdbc.update("""
+                        INSERT INTO health_reports(id,user_id,report_type,period_start,period_end,timezone,period_status,version,
+                          rules_version,data_cutoff_at,input_hash,snapshot_json,idempotency_key,created_at)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        """, id, userId, period.type(), Date.valueOf(period.start()), Date.valueOf(period.end()), period.timezone(),
+                        period.status(), version, ReportCalculator.RULES_VERSION, Timestamp.from(period.dataCutoffAt()), hash,
+                        json.writeValueAsString(snapshot), key.trim(), Timestamp.from(createdAt));
+                for (ReportDtos.Source source : facts.sources()) jdbc.update("""
+                        INSERT INTO health_report_sources(report_id,section_code,metric_code,source_type,source_id,source_local_date,location_label)
+                        VALUES(?,?,?,?,?,?,?)
+                        """, id, source.section(), source.metric(), source.sourceType(), source.sourceId(),
+                        source.localDate() == null ? null : Date.valueOf(source.localDate()), source.locationLabel());
+            });
+        } catch (DataIntegrityViolationException exception) {
+            List<Row> winner = rows("WHERE user_id=? AND report_type=? AND period_start=? AND input_hash=? AND deleted_at IS NULL ORDER BY version DESC LIMIT 1",
+                    userId, period.type(), Date.valueOf(period.start()), hash);
+            if (!winner.isEmpty()) return response(winner.get(0), false, false);
+            throw exception;
+        }
         Row row = new Row(id, userId, period.type(), period.start(), period.end(), period.timezone(), period.status(), version,
                 period.dataCutoffAt(), hash, json.valueToTree(snapshot), key.trim(), null, createdAt);
         return response(row, true, false);
@@ -112,7 +121,7 @@ public class ReportService {
     }
 
     public ReportDtos.ReportResponse detail(String userId, String id) {
-        Row row = owned(userId, id); return response(row, isLatest(row), changed(userId, row));
+        Row row = owned(userId, id); return response(row, false, changed(userId, row));
     }
 
     public List<ReportDtos.SourceResponse> sources(String userId, String id, String section, String metric) {

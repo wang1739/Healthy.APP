@@ -24,7 +24,7 @@ public class ReportDataCollector {
         Map<String, Object> targets = new LinkedHashMap<>();
         Map<String, Object> metrics = new LinkedHashMap<>();
         List<ReportDtos.Source> sources = new ArrayList<>();
-        Plan plan = plan(userId, period.dataCutoffAt());
+        Plan plan = plan(userId, period);
         if (plan != null) {
             targets.put("calories", plan.targetKcal);
             targets.put("protein", plan.protein);
@@ -187,18 +187,21 @@ public class ReportDataCollector {
         result.put("categories", categoryMap); return result;
     }
 
-    private Plan plan(String userId, Instant cutoff) {
+    private Plan plan(String userId, ReportDtos.Period period) {
+        Instant cutoff = period.dataCutoffAt().isBefore(period.endExclusiveInstant())
+                ? period.dataCutoffAt() : period.endExclusiveInstant();
         List<Plan> rows = jdbc.query("""
                 SELECT v.id, CASE WHEN hp.risk_blocked=TRUE THEN 'RISK_BLOCKED' WHEN hp.plan_needs_recalculation=TRUE THEN 'NEEDS_RECALCULATION' ELSE p.status END,
                        v.version_number, v.target_kcal, v.protein_g, v.carbs_g, v.fat_g,
                        v.water_ml, v.exercise_days, v.exercise_minutes, v.sleep_hours, v.created_at
                 FROM health_plans p JOIN health_plan_versions v ON v.plan_id=p.id
                 LEFT JOIN health_profiles hp ON hp.user_id=p.user_id
-                WHERE p.user_id=? AND v.created_at<=? ORDER BY v.version_number DESC
+                WHERE p.user_id=? AND p.phase_start_date<=? AND p.phase_end_date>=? AND v.created_at<?
+                ORDER BY v.version_number DESC
                 """, (rs, n) -> new Plan(rs.getString(1), rs.getString(2), rs.getInt(3), rs.getInt(4), rs.getInt(5),
                 rs.getInt(6), rs.getInt(7), rs.getInt(8), rs.getInt(9), rs.getInt(10),
                 rs.getBigDecimal(11).multiply(BigDecimal.valueOf(60)).intValue(), rs.getTimestamp(12).toInstant()),
-                userId, Timestamp.from(cutoff));
+                userId, Date.valueOf(period.end()), Date.valueOf(period.start()), Timestamp.from(cutoff));
         return rows.isEmpty() ? null : rows.get(0);
     }
 

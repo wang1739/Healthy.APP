@@ -1,6 +1,7 @@
 package com.lightbite.healthy.config;
 
 import com.lightbite.healthy.auth.BearerTokenFilter;
+import jakarta.servlet.DispatcherType;
 import java.util.Arrays;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,6 +35,7 @@ public class SecurityConfig {
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers(
                                 "/api/v1/system/ping",
                                 "/api/v1/auth/sms/send",
