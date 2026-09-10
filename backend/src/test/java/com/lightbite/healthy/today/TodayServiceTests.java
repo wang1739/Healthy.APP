@@ -19,6 +19,8 @@ import com.lightbite.healthy.profile.ProfileDtos;
 import com.lightbite.healthy.profile.ProfileService;
 import com.lightbite.healthy.sleep.SleepDtos;
 import com.lightbite.healthy.sleep.SleepService;
+import com.lightbite.healthy.tasks.TaskDtos;
+import com.lightbite.healthy.tasks.TaskService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -35,11 +37,12 @@ class TodayServiceTests {
     private final HydrationService hydration = mock(HydrationService.class);
     private final ActivityService activity = mock(ActivityService.class);
     private final SleepService sleep = mock(SleepService.class);
+    private final TaskService tasks = mock(TaskService.class);
     private TodayService service;
 
     @BeforeEach
     void setUp() {
-        service = new TodayService(plans, profiles, nutrition, hydration, activity, sleep);
+        service = new TodayService(plans, profiles, nutrition, hydration, activity, sleep, tasks);
         when(profiles.completeness(USER_ID)).thenReturn(completeness(true, false));
         when(profiles.measurements(USER_ID)).thenReturn(List.of());
         when(plans.current(USER_ID)).thenReturn(current("EMPTY", null));
@@ -48,6 +51,7 @@ class TodayServiceTests {
         when(hydration.day(eq(USER_ID), any(LocalDate.class), anyString())).thenReturn(hydrationDay("EMPTY", 0));
         when(activity.todaySummary(eq(USER_ID), any(LocalDate.class), anyString())).thenReturn(activitySummary("EMPTY"));
         when(sleep.todaySummary(eq(USER_ID), any(LocalDate.class), anyString())).thenReturn(sleepSummary("EMPTY"));
+        when(tasks.todaySummary(eq(USER_ID), any(LocalDate.class), anyString())).thenReturn(taskSummary("EMPTY"));
     }
 
     @Test
@@ -114,7 +118,7 @@ class TodayServiceTests {
         assertThat(response.hydration().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
         assertThat(response.activity().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
         assertThat(response.sleep().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
-        assertThat(response.tasks().status()).isEqualTo(TodayDtos.ModuleStatus.COMING_SOON);
+        assertThat(response.tasks().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
     }
 
     @Test
@@ -263,6 +267,37 @@ class TodayServiceTests {
         assertThat(service.get(USER_ID, LocalDate.now()).nextAction().type()).isEqualTo("CREATE_PLAN");
     }
 
+    @Test
+    void mapsReadyTasksAndContainsOnlyTaskFailure() {
+        LocalDate date = LocalDate.of(2026, 9, 8);
+        when(tasks.todaySummary(eq(USER_ID), eq(date), anyString())).thenReturn(taskSummary("READY"));
+        TodayDtos.TaskModule ready = service.get(USER_ID, date, "UTC").tasks();
+        assertThat(ready.status()).isEqualTo(TodayDtos.ModuleStatus.READY);
+        assertThat(ready.totalCount()).isEqualTo(4);
+        assertThat(ready.completedCount()).isEqualTo(1);
+        assertThat(ready.pendingCount()).isEqualTo(3);
+        assertThat(ready.overdueCount()).isEqualTo(1);
+        assertThat(ready.nextTask().title()).isEqualTo("下一项任务");
+        assertThat(ready.hasPlanUpdate()).isTrue();
+
+        when(tasks.todaySummary(eq(USER_ID), eq(date), anyString())).thenThrow(new IllegalStateException("sql detail"));
+        TodayDtos.TodayResponse failed = service.get(USER_ID, date, "UTC");
+        assertThat(failed.tasks().status()).isEqualTo(TodayDtos.ModuleStatus.ERROR);
+        assertThat(failed.tasks().message()).doesNotContain("sql detail");
+        assertThat(failed.nutrition().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
+        assertThat(failed.hydration().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
+        assertThat(failed.activity().status()).isEqualTo(TodayDtos.ModuleStatus.EMPTY);
+    }
+
+    @Test
+    void keepsUserTasksVisibleWhenProfileIsIncomplete() {
+        when(profiles.completeness(USER_ID)).thenReturn(completeness(false, false));
+        when(tasks.todaySummary(eq(USER_ID), any(LocalDate.class), anyString())).thenReturn(taskSummary("READY"));
+        TodayDtos.TaskModule module = service.get(USER_ID, LocalDate.now(), "UTC").tasks();
+        assertThat(module.status()).isEqualTo(TodayDtos.ModuleStatus.READY);
+        assertThat(module.healthGuide()).isEqualTo("COMPLETE_PROFILE");
+    }
+
     private ProfileDtos.CompletenessResponse completeness(boolean complete, boolean blocked) {
         return new ProfileDtos.CompletenessResponse(
                 complete ? 7 : 2, complete ? 100 : 28, complete, blocked, false,
@@ -323,5 +358,14 @@ class TodayServiceTests {
                 List.of(), 470, "READY".equals(state) ? 480 : null, 3, new BigDecimal("4.0"), 30,
                 true, planState);
         return new SleepDtos.TodaySummary(day, week);
+    }
+
+    private TaskDtos.TodaySummary taskSummary(String status) {
+        var next = "READY".equals(status) ? new TaskDtos.NextTask("task-1", "下一项任务",
+                Instant.parse("2026-09-08T08:00:00Z"), LocalDate.of(2026, 9, 8), "WORK", "USER", false) : null;
+        return new TaskDtos.TodaySummary(status, "READY".equals(status) ? 4 : 0,
+                "READY".equals(status) ? 1 : 0, "READY".equals(status) ? 3 : 0,
+                "READY".equals(status) ? 1 : 0, next, "READY".equals(status),
+                "READY".equals(status) ? "COMPLETE_PROFILE" : "CREATE_PLAN");
     }
 }

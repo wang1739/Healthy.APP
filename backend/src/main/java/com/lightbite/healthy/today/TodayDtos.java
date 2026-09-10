@@ -41,6 +41,30 @@ public final class TodayDtos {
     public record Module(ModuleStatus status, String message) {
     }
 
+    public record TaskNextTask(
+            String id,
+            String title,
+            Instant dueAt,
+            LocalDate date,
+            String category,
+            String source,
+            boolean allDay
+    ) {
+    }
+
+    public record TaskModule(
+            ModuleStatus status,
+            Integer totalCount,
+            Integer completedCount,
+            Integer pendingCount,
+            Integer overdueCount,
+            TaskNextTask nextTask,
+            Boolean hasPlanUpdate,
+            String healthGuide,
+            String message
+    ) {
+    }
+
     public record NutritionModule(
             ModuleStatus status,
             Integer consumedKcal,
@@ -99,7 +123,7 @@ public final class TodayDtos {
             HydrationModule hydration,
             ActivityModule activity,
             SleepModule sleep,
-            Module tasks,
+            TaskModule tasks,
             NextAction nextAction
     ) {
     }
