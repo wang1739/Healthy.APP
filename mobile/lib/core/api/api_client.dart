@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:healthy/core/api/api_config.dart';
@@ -7,6 +9,7 @@ import 'package:healthy/features/hydration/domain/hydration_data.dart';
 import 'package:healthy/features/activity/domain/activity_data.dart';
 import 'package:healthy/features/sleep/domain/sleep_data.dart';
 import 'package:healthy/features/tasks/domain/task_data.dart';
+import 'package:healthy/features/report/domain/report_data.dart';
 import 'package:healthy/features/today/domain/today_data.dart';
 
 class ApiClient {
@@ -730,6 +733,103 @@ class ApiClient {
     return Map<String, dynamic>.from(response.data as Map);
   }
 
+  Future<HealthReport> generateReport({
+    required ReportType type,
+    required DateTime date,
+    required String idempotencyKey,
+  }) async {
+    final response = await _authorized(
+      'POST',
+      '/reports',
+      data: {
+        'type': type.wireName,
+        'date': formatLocalDate(date),
+        'timezone': await _timezone(),
+      },
+      headers: {'Idempotency-Key': idempotencyKey},
+    );
+    return HealthReport.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<ReportPageData> getReports({
+    required ReportType type,
+    required DateTime date,
+  }) async {
+    final response = await _authorized(
+      'GET',
+      '/reports',
+      queryParameters: {
+        'type': type.wireName,
+        'date': formatLocalDate(date),
+        'timezone': await _timezone(),
+      },
+    );
+    return ReportPageData.fromJson(response.data);
+  }
+
+  Future<HealthReport> getReport(String id) async {
+    final response = await _authorized('GET', '/reports/$id');
+    return HealthReport.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  }
+
+  Future<List<ReportSource>> getReportSources(
+    String id, {
+    required String section,
+    String? metric,
+  }) async {
+    final response = await _authorized(
+      'GET',
+      '/reports/$id/sources',
+      queryParameters: {
+        'section': section,
+        if (metric?.isNotEmpty == true) 'metric': metric,
+      },
+    );
+    final data = response.data;
+    final values = data is List
+        ? data
+        : (data as Map?)?['items'] as List? ?? const [];
+    return values
+        .map(
+          (item) =>
+              ReportSource.fromJson(Map<String, dynamic>.from(item as Map)),
+        )
+        .toList(growable: false);
+  }
+
+  Future<ReportPdf> downloadReportPdf(String id) async {
+    final response = await _authorized(
+      'GET',
+      '/reports/$id/pdf',
+      responseType: ResponseType.bytes,
+    );
+    final data = response.data;
+    final bytes = data is Uint8List
+        ? data
+        : Uint8List.fromList(List<int>.from(data as List));
+    final disposition = response.headers.value('content-disposition') ?? '';
+    final encoded = RegExp(
+      r"filename\*=UTF-8''([^;]+)",
+      caseSensitive: false,
+    ).firstMatch(disposition);
+    final fallback = RegExp(r'filename="?([^";]+)').firstMatch(disposition);
+    final rawName = encoded == null
+        ? fallback?.group(1) ?? '轻食记-健康报告.pdf'
+        : Uri.decodeComponent(encoded.group(1)!);
+    return ReportPdf(
+      bytes: bytes,
+      fileName: rawName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_'),
+    );
+  }
+
+  Future<void> deleteReport(String id) async {
+    await _authorized('DELETE', '/reports/$id');
+  }
+
   Future<void> logout({bool allDevices = false}) async {
     try {
       if (_accessToken != null) {
@@ -751,6 +851,7 @@ class ApiClient {
     Object? data,
     Map<String, dynamic>? queryParameters,
     Map<String, String>? headers,
+    ResponseType? responseType,
   }) async {
     try {
       return await _dio.request<dynamic>(
@@ -760,6 +861,7 @@ class ApiClient {
         options: Options(
           method: method,
           headers: {..._authHeaders, ...?headers},
+          responseType: responseType,
         ),
       );
     } on DioException catch (error) {
@@ -771,6 +873,7 @@ class ApiClient {
         options: Options(
           method: method,
           headers: {..._authHeaders, ...?headers},
+          responseType: responseType,
         ),
       );
     }

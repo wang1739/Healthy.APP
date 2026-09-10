@@ -10,6 +10,7 @@ import 'package:healthy/core/theme/app_theme.dart';
 import 'package:healthy/features/hydration/application/hydration_reminder_scheduler.dart';
 import 'package:healthy/features/sleep/application/sleep_reminder_scheduler.dart';
 import 'package:healthy/features/tasks/application/task_notification_scheduler.dart';
+import 'package:healthy/features/report/application/report_controller.dart';
 
 class HealthyApp extends StatefulWidget {
   const HealthyApp({super.key});
@@ -28,6 +29,7 @@ class _HealthyAppState extends State<HealthyApp> {
     _session = SessionController(
       ApiClient.instance,
       onLogout: () async {
+        final accountKey = _session.accountKey;
         await Future.wait([
           HydrationReminderScheduler.instance
               .cancelHydrationReminders()
@@ -38,6 +40,7 @@ class _HealthyAppState extends State<HealthyApp> {
           TaskNotificationScheduler.instance.cancelActiveAccount().catchError(
             (_) {},
           ),
+          ReportController.clearAccountCache(accountKey).catchError((_) {}),
         ]);
       },
     );
