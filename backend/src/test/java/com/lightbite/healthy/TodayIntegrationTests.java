@@ -36,6 +36,11 @@ class TodayIntegrationTests {
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.webAppContextSetup(applicationContext).apply(springSecurity()).build();
+        jdbc.update("DELETE FROM task_notification_events");
+        jdbc.update("DELETE FROM task_operation_keys");
+        jdbc.update("DELETE FROM task_instances");
+        jdbc.update("DELETE FROM task_templates");
+        jdbc.update("DELETE FROM task_settings");
         jdbc.update("DELETE FROM hydration_entries");
         jdbc.update("DELETE FROM hydration_settings");
         jdbc.update("DELETE FROM activity_records");
@@ -80,11 +85,29 @@ class TodayIntegrationTests {
                 .andExpect(jsonPath("$.hydration.status").value("EMPTY"))
                 .andExpect(jsonPath("$.hydration.consumedMl").value(0))
                 .andExpect(jsonPath("$.hydration.targetMl").value(2000))
+                .andExpect(jsonPath("$.tasks.status").value("EMPTY"))
+                .andExpect(jsonPath("$.tasks.healthGuide").value("CREATE_PLAN"))
                 .andExpect(jsonPath("$.nextAction.type").value("CREATE_PLAN"));
 
         mockMvc.perform(get("/api/v1/today?date=2026-09-08").with(user(USER_B)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.weight.valueKg").value(78.4));
+    }
+
+    @Test
+    void returnsRealTaskSummaryWithoutHealthPlan() throws Exception {
+        mockMvc.perform(post("/api/v1/tasks").with(user(USER_A)).header("Idempotency-Key", "today-task")
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"title":"今日工作","category":"WORK","priority":"IMPORTANT","allDay":true,
+                                 "date":"2026-09-10","recurrenceType":"NONE","timezone":"UTC"}
+                                """))
+                .andExpect(status().isCreated());
+        mockMvc.perform(get("/api/v1/today?date=2026-09-10&timezone=UTC").with(user(USER_A)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.tasks.status").value("READY"))
+                .andExpect(jsonPath("$.tasks.totalCount").value(1))
+                .andExpect(jsonPath("$.tasks.pendingCount").value(1))
+                .andExpect(jsonPath("$.tasks.nextTask.title").value("今日工作"))
+                .andExpect(jsonPath("$.tasks.healthGuide").value("CREATE_PLAN"));
     }
 
     @Test
@@ -255,7 +278,14 @@ class TodayIntegrationTests {
                 .andExpect(status().isCreated());
         jdbc.update("UPDATE health_profiles SET completed=FALSE,current_step=2 WHERE user_id=?", USER_A);
 
-        mockMvc.perform(get("/api/v1/today?date=2026-09-08").with(user(USER_A)))
+        mockMvc.perform(post("/api/v1/tasks").with(user(USER_A)).header("Idempotency-Key", "incomplete-task")
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"title":"保留个人任务","category":"LIFE","priority":"NORMAL","allDay":true,
+                                 "date":"2026-09-10","recurrenceType":"NONE","timezone":"UTC"}
+                                """))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/api/v1/today?date=2026-09-10&timezone=UTC").with(user(USER_A)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.plan.status").value("EMPTY"))
                 .andExpect(jsonPath("$.plan.state").value("PROFILE_INCOMPLETE"))
@@ -265,6 +295,9 @@ class TodayIntegrationTests {
                 .andExpect(jsonPath("$.activity.status").value("PROFILE_INCOMPLETE"))
                 .andExpect(jsonPath("$.sleep.status").value("PROFILE_INCOMPLETE"))
                 .andExpect(jsonPath("$.sleep.targetMinutes").doesNotExist())
+                .andExpect(jsonPath("$.tasks.status").value("READY"))
+                .andExpect(jsonPath("$.tasks.totalCount").value(1))
+                .andExpect(jsonPath("$.tasks.healthGuide").value("COMPLETE_PROFILE"))
                 .andExpect(jsonPath("$.nextAction.type").value("COMPLETE_PROFILE"));
     }
 

@@ -12,6 +12,8 @@ import com.lightbite.healthy.hydration.HydrationDtos;
 import com.lightbite.healthy.hydration.HydrationService;
 import com.lightbite.healthy.sleep.SleepDtos;
 import com.lightbite.healthy.sleep.SleepService;
+import com.lightbite.healthy.tasks.TaskDtos;
+import com.lightbite.healthy.tasks.TaskService;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
@@ -21,19 +23,17 @@ import org.springframework.stereotype.Service;
 public class TodayService {
 
     private static final String LOAD_ERROR = "该项数据暂时无法加载";
-    private static final TodayDtos.Module COMING_SOON =
-            new TodayDtos.Module(TodayDtos.ModuleStatus.COMING_SOON, "记录功能待接入");
-
     private final PlanService plans;
     private final ProfileService profiles;
     private final NutritionService nutrition;
     private final HydrationService hydration;
     private final ActivityService activity;
     private final SleepService sleep;
+    private final TaskService tasks;
 
     public TodayService(
             PlanService plans, ProfileService profiles, NutritionService nutrition, HydrationService hydration,
-            ActivityService activity, SleepService sleep
+            ActivityService activity, SleepService sleep, TaskService tasks
     ) {
         this.plans = plans;
         this.profiles = profiles;
@@ -41,6 +41,7 @@ public class TodayService {
         this.hydration = hydration;
         this.activity = activity;
         this.sleep = sleep;
+        this.tasks = tasks;
     }
 
     public TodayDtos.TodayResponse get(String userId, LocalDate date) {
@@ -60,8 +61,26 @@ public class TodayService {
                 : hydration(userId, date, timezone);
         return new TodayDtos.TodayResponse(
                 date, plan, weight, nutrition(userId, date), hydrationModule, activity(userId, date, timezone),
-                sleep(userId, date, timezone), COMING_SOON,
+                sleep(userId, date, timezone), tasks(userId, date, timezone),
                 nextAction(profile, plan));
+    }
+
+    private TodayDtos.TaskModule tasks(String userId, LocalDate date, String timezone) {
+        try {
+            String zone = timezone == null || timezone.isBlank()
+                    ? ZoneId.systemDefault().getId() : timezone;
+            TaskDtos.TodaySummary summary = tasks.todaySummary(userId, date, zone);
+            TaskDtos.NextTask next = summary.nextTask();
+            TodayDtos.TaskNextTask nextTask = next == null ? null : new TodayDtos.TaskNextTask(
+                    next.id(), next.title(), next.dueAt(), next.date(), next.category(), next.source(), next.allDay());
+            return new TodayDtos.TaskModule(
+                    "EMPTY".equals(summary.status()) ? TodayDtos.ModuleStatus.EMPTY : TodayDtos.ModuleStatus.READY,
+                    summary.totalCount(), summary.completedCount(), summary.pendingCount(), summary.overdueCount(),
+                    nextTask, summary.hasPlanUpdate(), summary.healthGuide(), null);
+        } catch (RuntimeException exception) {
+            return new TodayDtos.TaskModule(
+                    TodayDtos.ModuleStatus.ERROR, null, null, null, null, null, null, null, LOAD_ERROR);
+        }
     }
 
     private TodayDtos.SleepModule sleep(String userId, LocalDate date, String timezone) {
