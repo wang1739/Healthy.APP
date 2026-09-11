@@ -51,7 +51,8 @@ public final class AuthDtos {
             String refreshToken,
             long expiresInSeconds,
             boolean profileComplete,
-            String accountStatus
+            String accountStatus,
+            String phone
     ) {
     }
 }

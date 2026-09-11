@@ -7,6 +7,7 @@ class FeaturePlaceholder extends StatelessWidget {
     required this.description,
     required this.icon,
     this.example = false,
+    this.showFrameworkNotice = true,
     this.child,
     super.key,
   });
@@ -15,6 +16,7 @@ class FeaturePlaceholder extends StatelessWidget {
   final String description;
   final IconData icon;
   final bool example;
+  final bool showFrameworkNotice;
   final Widget? child;
 
   @override
@@ -37,18 +39,19 @@ class FeaturePlaceholder extends StatelessWidget {
           const SizedBox(height: AppSpacing.small),
           Text(description),
           const SizedBox(height: AppSpacing.large),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.large),
-              child: Row(
-                children: [
-                  Icon(icon, size: 30),
-                  const SizedBox(width: AppSpacing.medium),
-                  const Expanded(child: Text('基础框架已就绪，业务功能将在下一阶段接入。')),
-                ],
+          if (showFrameworkNotice)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.large),
+                child: Row(
+                  children: [
+                    Icon(icon, size: 30),
+                    const SizedBox(width: AppSpacing.medium),
+                    const Expanded(child: Text('基础框架已就绪，业务功能将在下一阶段接入。')),
+                  ],
+                ),
               ),
             ),
-          ),
           if (child != null) ...[
             const SizedBox(height: AppSpacing.large),
             child!,

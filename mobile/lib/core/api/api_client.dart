@@ -27,6 +27,7 @@ class ApiClient {
   final TokenStore _tokenStore;
   final Future<String> Function() _timezone;
   String? _accessToken;
+  String? _accountStatus;
   Future<bool>? _refreshing;
 
   static BaseOptions _options() => BaseOptions(
@@ -48,6 +49,14 @@ class ApiClient {
     final response = await _dio.post<Map<String, dynamic>>(
       '/auth/sms/send',
       data: {'phone': phone, 'purpose': 'LOGIN'},
+    );
+    return response.data?['debugCode'] as String?;
+  }
+
+  Future<String?> sendPurposeCode(String phone, String purpose) async {
+    final response = await _dio.post<Map<String, dynamic>>(
+      '/auth/sms/send',
+      data: {'phone': phone, 'purpose': purpose},
     );
     return response.data?['debugCode'] as String?;
   }
@@ -86,10 +95,17 @@ class ApiClient {
   Future<LoginResult?> restoreSession() async {
     final refreshed = await _refresh();
     if (!refreshed) return null;
+    if (_accountStatus == 'DELETION_PENDING') {
+      return const LoginResult(
+        profileComplete: false,
+        accountStatus: 'DELETION_PENDING',
+      );
+    }
     final account = await getAccount();
     return LoginResult(
       profileComplete: account['profileComplete'] == true,
       phone: account['phone'] as String?,
+      accountStatus: account['status']?.toString() ?? 'ACTIVE',
     );
   }
 
@@ -97,6 +113,129 @@ class ApiClient {
     final response = await _authorized('GET', '/account');
     return Map<String, dynamic>.from(response.data as Map);
   }
+
+  Future<List<Map<String, dynamic>>> getDevices() async {
+    final response = await _authorized('GET', '/account/devices');
+    return (response.data as List)
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(growable: false);
+  }
+
+  Future<void> removeDevice(String id) =>
+      _authorized('DELETE', '/account/devices/$id').then((_) {});
+
+  Future<List<Map<String, dynamic>>> getSecurityEvents() async {
+    final response = await _authorized('GET', '/account/security-events');
+    return (response.data as List)
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(growable: false);
+  }
+
+  Future<void> logoutOtherDevices(String code) => _authorized(
+    'POST',
+    '/account/devices/logout-others',
+    data: {'code': code},
+  ).then((_) {});
+
+  Future<Map<String, dynamic>> getPrivacy() async => Map<String, dynamic>.from(
+    (await _authorized('GET', '/privacy')).data as Map,
+  );
+
+  Future<void> acceptConsent(String type, String version) => _authorized(
+    'POST',
+    '/privacy/consents',
+    data: {'documentType': type, 'version': version},
+  ).then((_) {});
+
+  Future<void> withdrawHealthAuthorization() => _authorized(
+    'POST',
+    '/privacy/health-authorization/withdraw',
+  ).then((_) {});
+
+  Future<void> changePhone({
+    required String oldCode,
+    required String newPhone,
+    required String newCode,
+  }) => _authorized(
+    'POST',
+    '/account/phone/change',
+    data: {'oldCode': oldCode, 'newPhone': newPhone, 'newCode': newCode},
+  ).then((_) {});
+
+  Future<Map<String, dynamic>> submitPhoneAppeal({
+    required String newPhone,
+    required String materialReference,
+  }) async => Map<String, dynamic>.from(
+    (await _authorized(
+          'POST',
+          '/account/phone/appeals',
+          data: {'newPhone': newPhone, 'materialReference': materialReference},
+        )).data
+        as Map,
+  );
+
+  Future<List<Map<String, dynamic>>> getDataExports() async {
+    final response = await _authorized('GET', '/data-exports');
+    return (response.data as List)
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>> createDataExport({
+    required String code,
+    required String password,
+  }) async => Map<String, dynamic>.from(
+    (await _authorized(
+          'POST',
+          '/data-exports',
+          data: {'code': code, 'password': password},
+        )).data
+        as Map,
+  );
+
+  Future<Map<String, dynamic>> previewHealthDataDeletion(
+    List<String> types,
+  ) async => Map<String, dynamic>.from(
+    (await _authorized(
+          'POST',
+          '/health-data-deletion/preview',
+          data: {'dataTypes': types},
+        )).data
+        as Map,
+  );
+
+  Future<Map<String, dynamic>> deleteHealthData(
+    List<String> types,
+    String code,
+  ) async => Map<String, dynamic>.from(
+    (await _authorized(
+          'POST',
+          '/health-data-deletion',
+          data: {'dataTypes': types, 'code': code},
+        )).data
+        as Map,
+  );
+
+  Future<Map<String, dynamic>> requestAccountDeletion(String code) async =>
+      Map<String, dynamic>.from(
+        (await _authorized(
+              'POST',
+              '/account/deletion',
+              data: {'code': code},
+            )).data
+            as Map,
+      );
+
+  Future<Map<String, dynamic>> getAccountDeletion() async =>
+      Map<String, dynamic>.from(
+        (await _authorized('GET', '/account/deletion')).data as Map,
+      );
+
+  Future<void> recoverAccount(String code) => _authorized(
+    'POST',
+    '/account/deletion/recover',
+    data: {'code': code},
+  ).then((_) => _accountStatus = 'ACTIVE');
 
   Future<Map<String, dynamic>> profileCompleteness() async {
     final response = await _authorized('GET', '/profile/completeness');
@@ -841,6 +980,7 @@ class ApiClient {
       }
     } finally {
       _accessToken = null;
+      _accountStatus = null;
       await _tokenStore.clear();
     }
   }
@@ -903,6 +1043,7 @@ class ApiClient {
       return true;
     } on DioException {
       _accessToken = null;
+      _accountStatus = null;
       await _tokenStore.clear();
       return false;
     }
@@ -913,10 +1054,12 @@ class ApiClient {
     String? phone,
   }) async {
     _accessToken = data['accessToken'] as String;
+    _accountStatus = data['accountStatus']?.toString() ?? 'ACTIVE';
     await _tokenStore.saveRefreshToken(data['refreshToken'] as String);
     return LoginResult(
       profileComplete: data['profileComplete'] == true,
       phone: phone ?? data['phone'] as String?,
+      accountStatus: _accountStatus!,
     );
   }
 
@@ -937,8 +1080,13 @@ class ApiClient {
 }
 
 class LoginResult {
-  const LoginResult({required this.profileComplete, this.phone});
+  const LoginResult({
+    required this.profileComplete,
+    this.phone,
+    this.accountStatus = 'ACTIVE',
+  });
 
   final bool profileComplete;
   final String? phone;
+  final String accountStatus;
 }

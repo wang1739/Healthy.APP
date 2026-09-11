@@ -62,6 +62,21 @@ void main() {
     expect(session.profileStep, 3);
   });
 
+  test('注销处理中登录只进入恢复页面', () async {
+    final session = SessionController(_FakeApiClient());
+
+    await session.acceptLogin(
+      const LoginResult(
+        profileComplete: true,
+        phone: '13800138000',
+        accountStatus: 'DELETION_PENDING',
+      ),
+    );
+
+    expect(session.stage, AppStage.deletionPending);
+    expect(session.access, UserAccess.profileIncomplete);
+  });
+
   test('受限功能会连续进入登录和建档并返回原功能', () async {
     final session = SessionController(_FakeApiClient(currentStep: 2));
 

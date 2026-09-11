@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:healthy/core/api/api_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum AppStage { loading, login, home, profile }
+enum AppStage { loading, login, home, profile, deletionPending }
 
 enum UserAccess { guest, profileIncomplete, profileComplete }
 
@@ -26,6 +26,7 @@ class SessionController extends ChangeNotifier {
   bool riskBlocked = false;
   int sessionRevision = 0;
   String accountKey = 'guest';
+  String? phone;
   PendingFeature? _pendingFeature;
 
   PendingFeature? get pendingFeature => _pendingFeature;
@@ -34,6 +35,13 @@ class SessionController extends ChangeNotifier {
     try {
       final session = await api.restoreSession();
       if (session != null) {
+        phone = session.phone;
+        if (session.accountStatus == 'DELETION_PENDING') {
+          access = UserAccess.profileIncomplete;
+          stage = AppStage.deletionPending;
+          notifyListeners();
+          return;
+        }
         accountKey = _accountKey(session.phone);
         access = session.profileComplete
             ? UserAccess.profileComplete
@@ -71,6 +79,14 @@ class SessionController extends ChangeNotifier {
 
   Future<void> acceptLogin(LoginResult result) async {
     sessionRevision++;
+    phone = result.phone;
+    if (result.accountStatus == 'DELETION_PENDING') {
+      access = UserAccess.profileIncomplete;
+      accountKey = _accountKey(result.phone);
+      stage = AppStage.deletionPending;
+      notifyListeners();
+      return;
+    }
     accountKey = _accountKey(result.phone);
     access = result.profileComplete
         ? UserAccess.profileComplete
@@ -146,9 +162,31 @@ class SessionController extends ChangeNotifier {
     await preferences.setBool(_guestBrowseKey, true);
     access = UserAccess.guest;
     accountKey = 'guest';
+    phone = null;
     profileStep = 0;
     riskBlocked = false;
     _pendingFeature = null;
+    stage = AppStage.home;
+    notifyListeners();
+  }
+
+  Future<void> accountDeletionRequested() async {
+    await api.logout();
+    sessionRevision++;
+    access = UserAccess.guest;
+    stage = AppStage.login;
+    notifyListeners();
+  }
+
+  Future<void> accountRecovered() async {
+    sessionRevision++;
+    final account = await api.getAccount();
+    phone = account['phone'] as String?;
+    accountKey = _accountKey(phone);
+    access = account['profileComplete'] == true
+        ? UserAccess.profileComplete
+        : UserAccess.profileIncomplete;
+    await _loadProfileState();
     stage = AppStage.home;
     notifyListeners();
   }

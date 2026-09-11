@@ -261,9 +261,9 @@ public class AuthService {
                 (id, user_id, device_id, token_hash, expires_at) VALUES (?, ?, ?, ?, ?)
                 """, UUID.randomUUID().toString(), userId, deviceId, hash(refreshToken),
                 Timestamp.from(now.plus(REFRESH_TTL)));
-        String status = jdbc.queryForObject("SELECT status FROM users WHERE id=?", String.class, userId);
+        Map<String, Object> account = jdbc.queryForMap("SELECT status,phone FROM users WHERE id=?", userId);
         return new AuthDtos.AuthResponse(accessToken, refreshToken, ACCESS_TTL.toSeconds(),
-                isProfileComplete(userId), status);
+                isProfileComplete(userId), account.get("status").toString(), account.get("phone").toString());
     }
 
     private boolean isProfileComplete(String userId) {
