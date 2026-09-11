@@ -127,7 +127,7 @@ public class AuthService {
             account = jdbc.queryForMap("""
                     SELECT u.id, p.password_hash FROM users u
                     JOIN user_passwords p ON p.user_id = u.id
-                    WHERE u.phone = ? AND u.status = 'ACTIVE'
+                    WHERE u.phone = ? AND u.status IN ('ACTIVE','DELETION_PENDING')
                     """, request.phone());
         } catch (EmptyResultDataAccessException exception) {
             throw invalidCredentials();
@@ -210,17 +210,18 @@ public class AuthService {
     public SessionIdentity validateAccessToken(String token) {
         try {
             Map<String, Object> result = jdbc.queryForMap("""
-                    SELECT t.user_id, t.device_id, t.expires_at
+                    SELECT t.user_id, t.device_id, t.expires_at, u.status
                     FROM access_tokens t
                     JOIN users u ON u.id = t.user_id
                     JOIN user_devices d ON d.id = t.device_id
                     WHERE t.token_hash = ? AND t.revoked_at IS NULL
-                      AND d.revoked_at IS NULL AND u.status = 'ACTIVE'
+                      AND d.revoked_at IS NULL AND u.status IN ('ACTIVE','DELETION_PENDING')
                     """, hash(token));
             if (((Timestamp) result.get("expires_at")).toInstant().isBefore(Instant.now())) {
                 return null;
             }
-            return new SessionIdentity(result.get("user_id").toString(), result.get("device_id").toString());
+            return new SessionIdentity(result.get("user_id").toString(), result.get("device_id").toString(),
+                    result.get("status").toString());
         } catch (EmptyResultDataAccessException exception) {
             return null;
         }
@@ -260,7 +261,9 @@ public class AuthService {
                 (id, user_id, device_id, token_hash, expires_at) VALUES (?, ?, ?, ?, ?)
                 """, UUID.randomUUID().toString(), userId, deviceId, hash(refreshToken),
                 Timestamp.from(now.plus(REFRESH_TTL)));
-        return new AuthDtos.AuthResponse(accessToken, refreshToken, ACCESS_TTL.toSeconds(), isProfileComplete(userId));
+        String status = jdbc.queryForObject("SELECT status FROM users WHERE id=?", String.class, userId);
+        return new AuthDtos.AuthResponse(accessToken, refreshToken, ACCESS_TTL.toSeconds(),
+                isProfileComplete(userId), status);
     }
 
     private boolean isProfileComplete(String userId) {
@@ -300,6 +303,6 @@ public class AuthService {
         return new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN", "登录状态已失效，请重新登录");
     }
 
-    public record SessionIdentity(String userId, String deviceId) {
+    public record SessionIdentity(String userId, String deviceId, String accountStatus) {
     }
 }

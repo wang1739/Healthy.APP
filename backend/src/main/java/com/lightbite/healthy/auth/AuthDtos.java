@@ -50,7 +50,8 @@ public final class AuthDtos {
             String accessToken,
             String refreshToken,
             long expiresInSeconds,
-            boolean profileComplete
+            boolean profileComplete,
+            String accountStatus
     ) {
     }
 }
