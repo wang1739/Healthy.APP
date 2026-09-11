@@ -55,5 +55,18 @@ class PrivacyIntegrationTests {
         mockMvc.perform(get("/api/v1/privacy").with(user(USER)))
                 .andExpect(jsonPath("$.healthAuthorized").value(false))
                 .andExpect(jsonPath("$.history[0].action").value("WITHDRAW"));
+        mockMvc.perform(get("/api/v1/profile/completeness").with(user(USER)))
+                .andExpect(status().isLocked())
+                .andExpect(jsonPath("$.message").value("健康数据授权已撤回，请重新同意后使用此功能"));
+        mockMvc.perform(get("/api/v1/account").with(user(USER)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v1/privacy/consents").with(user(USER))
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"documentType":"HEALTH_DATA_AUTHORIZATION","version":"2026-09"}
+                                """))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/v1/profile/completeness").with(user(USER)))
+                .andExpect(status().isOk());
     }
 }
