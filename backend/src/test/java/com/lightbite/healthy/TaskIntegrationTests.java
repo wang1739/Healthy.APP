@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.lightbite.healthy.tasks.TaskDtos;
 import com.lightbite.healthy.tasks.TaskService;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -34,6 +35,7 @@ import org.springframework.web.context.WebApplicationContext;
 class TaskIntegrationTests {
     private static final String USER_A = "task-api-a";
     private static final String USER_B = "task-api-b";
+    private static final LocalDate TODAY = LocalDate.now(ZoneOffset.UTC);
     @Autowired WebApplicationContext context;
     @Autowired JdbcTemplate jdbc;
     @Autowired TaskService tasks;
@@ -56,7 +58,7 @@ class TaskIntegrationTests {
 
     @Test
     void requiresAuthenticationCreatesAndKeepsUsersIsolated() throws Exception {
-        mockMvc.perform(get("/api/v1/tasks/days/2026-09-10").param("timezone", "UTC"))
+        mockMvc.perform(get("/api/v1/tasks/days/{date}", TODAY).param("timezone", "UTC"))
                 .andExpect(status().isUnauthorized());
         String body = createJson("个人任务", "DAILY");
         for (String userId : List.of(USER_A, USER_A, USER_B)) {
@@ -67,7 +69,7 @@ class TaskIntegrationTests {
         }
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM task_templates WHERE idempotency_key='same'",
                 Integer.class)).isEqualTo(2);
-        mockMvc.perform(get("/api/v1/tasks/days/2026-09-10").param("timezone", "UTC").with(user(USER_A)))
+        mockMvc.perform(get("/api/v1/tasks/days/{date}", TODAY).param("timezone", "UTC").with(user(USER_A)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("READY"))
                 .andExpect(jsonPath("$.timeline[0].title").value("个人任务"));
     }
@@ -98,7 +100,7 @@ class TaskIntegrationTests {
                         .content("{\"quietEnabled\":false,\"quietStartTime\":\"23:00\","
                                 + "\"quietEndTime\":\"06:00\",\"expectedVersion\":0}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.version").value(1));
-        mockMvc.perform(get("/api/v1/tasks/weeks/2026-09-10").param("timezone", "UTC").with(user(USER_A)))
+        mockMvc.perform(get("/api/v1/tasks/weeks/{date}", TODAY).param("timezone", "UTC").with(user(USER_A)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.categories.length()").value(5));
         String hash = "a".repeat(64);
         mockMvc.perform(post("/api/v1/tasks/notification-events").with(user(USER_B))
@@ -111,7 +113,7 @@ class TaskIntegrationTests {
     @Test
     void concurrentCreateAndGenerationRemainUnique() throws Exception {
         var request = new TaskDtos.CreateRequest("并发任务", null, "WORK", "IMPORTANT", false, "18:00",
-                LocalDate.of(2026, 9, 10), "DAILY", null, null, "UTC");
+                TODAY, "DAILY", null, null, "UTC");
         var start = new CountDownLatch(1);
         var executor = Executors.newFixedThreadPool(6);
         try {
@@ -123,20 +125,21 @@ class TaskIntegrationTests {
             start.countDown();
             for (var result : creates) assertThat(result.get().instances()).hasSize(8);
             String template = jdbc.queryForObject("SELECT id FROM task_templates WHERE user_id=?", String.class, USER_A);
-            jdbc.update("DELETE FROM task_instances WHERE template_id=? AND original_local_date='2026-09-11'", template);
+            jdbc.update("DELETE FROM task_instances WHERE template_id=? AND original_local_date=?", template,
+                    TODAY.plusDays(1));
             var generationStart = new CountDownLatch(1);
             List<Future<?>> generations = new ArrayList<>();
             for (int i = 0; i < 6; i++) generations.add(executor.submit(() -> {
                 generationStart.await();
-                return tasks.day(USER_A, LocalDate.of(2026, 9, 11), "UTC");
+                return tasks.day(USER_A, TODAY.plusDays(1), "UTC");
             }));
             generationStart.countDown();
             for (var result : generations) result.get();
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM task_instances WHERE template_id=? "
-                    + "AND original_local_date='2026-09-11'", Integer.class, template)).isEqualTo(1);
+                    + "AND original_local_date=?", Integer.class, template, TODAY.plusDays(1))).isEqualTo(1);
 
             String instance = jdbc.queryForObject("SELECT id FROM task_instances WHERE template_id=? "
-                    + "AND original_local_date='2026-09-10'", String.class, template);
+                    + "AND original_local_date=?", String.class, template, TODAY);
             int beforeVersion = jdbc.queryForObject("SELECT version FROM task_instances WHERE id=?",
                     Integer.class, instance);
             var operationStart = new CountDownLatch(1);
@@ -159,8 +162,8 @@ class TaskIntegrationTests {
     private String createJson(String title, String recurrence) {
         return """
                 {"title":"%s","category":"WORK","priority":"IMPORTANT","allDay":false,
-                 "localTime":"10:00","date":"2026-09-10","recurrenceType":"%s",
+                 "localTime":"10:00","date":"%s","recurrenceType":"%s",
                  "reminderOffsetMinutes":15,"timezone":"UTC"}
-                """.formatted(title, recurrence);
+                """.formatted(title, TODAY, recurrence);
     }
 }

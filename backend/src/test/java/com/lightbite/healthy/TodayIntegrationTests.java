@@ -22,12 +22,14 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 
 @SpringBootTest
 @ActiveProfiles("test")
 class TodayIntegrationTests {
 
     private static final String USER_A = "today-user-a";
+    private static final LocalDate TODAY = LocalDate.now(ZoneOffset.UTC);
     private static final String USER_B = "today-user-b";
     @Autowired WebApplicationContext applicationContext;
     @Autowired JdbcTemplate jdbc;
@@ -99,10 +101,11 @@ class TodayIntegrationTests {
         mockMvc.perform(post("/api/v1/tasks").with(user(USER_A)).header("Idempotency-Key", "today-task")
                         .contentType(MediaType.APPLICATION_JSON).content("""
                                 {"title":"今日工作","category":"WORK","priority":"IMPORTANT","allDay":true,
-                                 "date":"2026-09-10","recurrenceType":"NONE","timezone":"UTC"}
-                                """))
+                                 "date":"%s","recurrenceType":"NONE","timezone":"UTC"}
+                                """.formatted(TODAY)))
                 .andExpect(status().isCreated());
-        mockMvc.perform(get("/api/v1/today?date=2026-09-10&timezone=UTC").with(user(USER_A)))
+        mockMvc.perform(get("/api/v1/today").param("date", TODAY.toString()).param("timezone", "UTC")
+                        .with(user(USER_A)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.tasks.status").value("READY"))
                 .andExpect(jsonPath("$.tasks.totalCount").value(1))
                 .andExpect(jsonPath("$.tasks.pendingCount").value(1))
@@ -281,11 +284,12 @@ class TodayIntegrationTests {
         mockMvc.perform(post("/api/v1/tasks").with(user(USER_A)).header("Idempotency-Key", "incomplete-task")
                         .contentType(MediaType.APPLICATION_JSON).content("""
                                 {"title":"保留个人任务","category":"LIFE","priority":"NORMAL","allDay":true,
-                                 "date":"2026-09-10","recurrenceType":"NONE","timezone":"UTC"}
-                                """))
+                                 "date":"%s","recurrenceType":"NONE","timezone":"UTC"}
+                                """.formatted(TODAY)))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(get("/api/v1/today?date=2026-09-10&timezone=UTC").with(user(USER_A)))
+        mockMvc.perform(get("/api/v1/today").param("date", TODAY.toString()).param("timezone", "UTC")
+                        .with(user(USER_A)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.plan.status").value("EMPTY"))
                 .andExpect(jsonPath("$.plan.state").value("PROFILE_INCOMPLETE"))
