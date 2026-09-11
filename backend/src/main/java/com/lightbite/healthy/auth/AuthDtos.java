@@ -41,6 +41,11 @@ public final class AuthDtos {
     public record LogoutRequest(boolean allDevices) {
     }
 
+    public record VerificationRequest(
+            @Pattern(regexp = "^\\d{6}$", message = "验证码必须为 6 位数字") String code
+    ) {
+    }
+
     public record AuthResponse(
             String accessToken,
             String refreshToken,

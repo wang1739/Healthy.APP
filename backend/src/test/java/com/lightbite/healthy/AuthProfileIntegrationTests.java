@@ -76,7 +76,13 @@ class AuthProfileIntegrationTests {
 
         mockMvc.perform(get("/api/v1/account").header("Authorization", "Bearer " + accessToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.phone").value("13800138000"));
+                .andExpect(jsonPath("$.phone").value("13800138000"))
+                .andExpect(jsonPath("$.maskedPhone").value("138****8000"));
+
+        mockMvc.perform(get("/api/v1/account/devices").header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[?(@.currentDevice == true)].name").value("测试手机"));
 
         mockMvc.perform(put("/api/v1/profile")
                         .header("Authorization", "Bearer " + accessToken)

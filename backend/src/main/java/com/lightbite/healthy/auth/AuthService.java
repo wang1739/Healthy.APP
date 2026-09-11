@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -27,6 +28,10 @@ public class AuthService {
     private static final Duration ACCESS_TTL = Duration.ofMinutes(15);
     private static final Duration REFRESH_TTL = Duration.ofDays(30);
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final Set<String> CODE_PURPOSES = Set.of(
+            "LOGIN", "DATA_EXPORT", "HEALTH_DATA_DELETE", "PHONE_OLD", "PHONE_NEW",
+            "LOGOUT_OTHER_DEVICES", "ACCOUNT_DELETE", "ACCOUNT_RECOVER"
+    );
 
     private final JdbcTemplate jdbc;
     private final PasswordEncoder passwordEncoder;
@@ -44,6 +49,9 @@ public class AuthService {
 
     @Transactional
     public AuthDtos.SendCodeResponse sendCode(AuthDtos.SendCodeRequest request) {
+        if (!CODE_PURPOSES.contains(request.purpose())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CODE_PURPOSE", "验证码用途不正确");
+        }
         Instant now = Instant.now();
         Integer recent = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM verification_codes WHERE phone = ? AND purpose = ? AND created_at > ?",
@@ -71,30 +79,7 @@ public class AuthService {
 
     @Transactional
     public AuthDtos.AuthResponse smsLogin(AuthDtos.SmsLoginRequest request) {
-        Map<String, Object> savedCode;
-        try {
-            savedCode = jdbc.queryForMap("""
-                    SELECT id, code_hash, attempts, expires_at
-                    FROM verification_codes
-                    WHERE phone = ? AND purpose = 'LOGIN' AND used_at IS NULL
-                    ORDER BY created_at DESC LIMIT 1
-                    """, request.phone());
-        } catch (EmptyResultDataAccessException exception) {
-            throw invalidCode();
-        }
-
-        String codeId = savedCode.get("id").toString();
-        int attempts = ((Number) savedCode.get("attempts")).intValue();
-        Instant expiresAt = ((Timestamp) savedCode.get("expires_at")).toInstant();
-        if (attempts >= 5 || expiresAt.isBefore(Instant.now())
-                || !MessageDigest.isEqual(
-                savedCode.get("code_hash").toString().getBytes(StandardCharsets.US_ASCII),
-                hash(request.code()).getBytes(StandardCharsets.US_ASCII))) {
-            jdbc.update("UPDATE verification_codes SET attempts = attempts + 1 WHERE id = ?", codeId);
-            throw invalidCode();
-        }
-
-        jdbc.update("UPDATE verification_codes SET used_at = ? WHERE id = ?", Timestamp.from(Instant.now()), codeId);
+        consumeCode(request.phone(), "LOGIN", request.code());
         String userId = findOrCreateUser(request.phone());
         if (request.password() != null && !request.password().isBlank()) {
             jdbc.update("DELETE FROM user_passwords WHERE user_id = ?", userId);
@@ -106,6 +91,33 @@ public class AuthService {
                 (id, user_id, agreement_version, privacy_version) VALUES (?, ?, '2026-09', '2026-09')
                 """, UUID.randomUUID().toString(), userId);
         return issueSession(userId, createDevice(userId, request.deviceName()));
+    }
+
+    public void consumeCode(String phone, String purpose, String code) {
+        Map<String, Object> savedCode;
+        try {
+            savedCode = jdbc.queryForMap("""
+                    SELECT id, code_hash, attempts, expires_at
+                    FROM verification_codes
+                    WHERE phone = ? AND purpose = ? AND used_at IS NULL
+                    ORDER BY created_at DESC LIMIT 1
+                    """, phone, purpose);
+        } catch (EmptyResultDataAccessException exception) {
+            throw invalidCode();
+        }
+
+        String codeId = savedCode.get("id").toString();
+        int attempts = ((Number) savedCode.get("attempts")).intValue();
+        Instant expiresAt = ((Timestamp) savedCode.get("expires_at")).toInstant();
+        if (attempts >= 5 || expiresAt.isBefore(Instant.now())
+                || code == null || !MessageDigest.isEqual(
+                savedCode.get("code_hash").toString().getBytes(StandardCharsets.US_ASCII),
+                hash(code).getBytes(StandardCharsets.US_ASCII))) {
+            jdbc.update("UPDATE verification_codes SET attempts = attempts + 1 WHERE id = ?", codeId);
+            throw invalidCode();
+        }
+
+        jdbc.update("UPDATE verification_codes SET used_at = ? WHERE id = ?", Timestamp.from(Instant.now()), codeId);
     }
 
     @Transactional
@@ -176,6 +188,23 @@ public class AuthService {
                 Timestamp.from(now), deviceId);
         jdbc.update("UPDATE refresh_tokens SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL",
                 Timestamp.from(now), deviceId);
+    }
+
+    @Transactional
+    public void revokeOtherDevices(String userId, String currentDeviceId) {
+        Instant now = Instant.now();
+        jdbc.update("UPDATE user_devices SET revoked_at=? WHERE user_id=? AND id<>? AND revoked_at IS NULL",
+                Timestamp.from(now), userId, currentDeviceId);
+        jdbc.update("UPDATE access_tokens SET revoked_at=? WHERE user_id=? AND device_id<>? AND revoked_at IS NULL",
+                Timestamp.from(now), userId, currentDeviceId);
+        jdbc.update("UPDATE refresh_tokens SET revoked_at=? WHERE user_id=? AND device_id<>? AND revoked_at IS NULL",
+                Timestamp.from(now), userId, currentDeviceId);
+    }
+
+    public String currentDeviceId(String accessToken) {
+        SessionIdentity identity = validateAccessToken(accessToken);
+        if (identity == null) throw invalidRefreshToken();
+        return identity.deviceId();
     }
 
     public SessionIdentity validateAccessToken(String token) {
