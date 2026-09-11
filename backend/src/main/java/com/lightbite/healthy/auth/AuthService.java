@@ -220,6 +220,8 @@ public class AuthService {
             if (((Timestamp) result.get("expires_at")).toInstant().isBefore(Instant.now())) {
                 return null;
             }
+            jdbc.update("UPDATE user_devices SET last_seen_at=? WHERE id=?",
+                    Timestamp.from(Instant.now()), result.get("device_id"));
             return new SessionIdentity(result.get("user_id").toString(), result.get("device_id").toString(),
                     result.get("status").toString());
         } catch (EmptyResultDataAccessException exception) {
@@ -243,7 +245,12 @@ public class AuthService {
 
     private String createDevice(String userId, String name) {
         String id = UUID.randomUUID().toString();
-        jdbc.update("INSERT INTO user_devices (id, user_id, name) VALUES (?, ?, ?)", id, userId, name);
+        String system = name.contains("iPhone") ? "iOS" : name.contains("Android") ? "Android" : "其他";
+        jdbc.update("INSERT INTO user_devices (id,user_id,name,system_name) VALUES (?,?,?,?)",
+                id, userId, name, system);
+        jdbc.update("INSERT INTO security_events (id,user_id,event_type,device_id,device_name,result) "
+                        + "VALUES (?,?,?,?,?,'成功')",
+                UUID.randomUUID().toString(), userId, "登录新设备", id, name);
         return id;
     }
 
