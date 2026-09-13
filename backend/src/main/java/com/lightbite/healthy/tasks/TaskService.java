@@ -40,11 +40,8 @@ public class TaskService {
     private final Clock clock;
 
     @Autowired
-    public TaskService(JdbcTemplate jdbc, TaskSchedulePolicy schedule, TaskHealthLinkService healthLinks) {
-        this(jdbc, schedule, healthLinks, Clock.systemUTC());
-    }
-
-    TaskService(JdbcTemplate jdbc, TaskSchedulePolicy schedule, TaskHealthLinkService healthLinks, Clock clock) {
+    public TaskService(JdbcTemplate jdbc, TaskSchedulePolicy schedule, TaskHealthLinkService healthLinks,
+                       Clock clock) {
         this.jdbc = jdbc;
         this.schedule = schedule;
         this.healthLinks = healthLinks;
