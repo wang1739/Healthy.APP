@@ -15,6 +15,7 @@ class TodayPage extends ConsumerStatefulWidget {
     required this.access,
     required this.onProtectedAction,
     required this.onOpenPlan,
+    this.active = true,
     this.onOpenNutrition,
     this.onOpenHydration,
     this.onOpenActivity,
@@ -33,6 +34,7 @@ class TodayPage extends ConsumerStatefulWidget {
 
   final ApiClient api;
   final UserAccess access;
+  final bool active;
   final ValueChanged<String> onProtectedAction;
   final VoidCallback onOpenPlan;
   final VoidCallback? onOpenNutrition;
@@ -68,7 +70,9 @@ class _TodayPageState extends ConsumerState<TodayPage>
   @override
   void didUpdateWidget(covariant TodayPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.access != widget.access ||
+    if (oldWidget.active != widget.active && widget.active) {
+      _loadPrivateData();
+    } else if (oldWidget.access != widget.access ||
         oldWidget.api != widget.api ||
         oldWidget.activityRevision != widget.activityRevision ||
         oldWidget.sleepRevision != widget.sleepRevision ||

@@ -41,12 +41,17 @@ Map<String, dynamic> _plan({
 }
 
 class _FakePlanApi extends ApiClient {
-  _FakePlanApi(this.current, {this.preview, this.previewErrorCode})
-    : super(dio: Dio());
+  _FakePlanApi(
+    this.current, {
+    this.preview,
+    this.previewErrorCode,
+    this.previewErrorMessage,
+  }) : super(dio: Dio());
 
   Map<String, dynamic> current;
   Map<String, dynamic>? preview;
   String? previewErrorCode;
+  String? previewErrorMessage;
   bool fail = false;
   int confirmed = 0;
   int recalculated = 0;
@@ -68,7 +73,10 @@ class _FakePlanApi extends ApiClient {
         response: Response(
           requestOptions: request,
           statusCode: 422,
-          data: {'code': previewErrorCode, 'message': '当前目标的个性计划尚未开放'},
+          data: {
+            'code': previewErrorCode,
+            'message': previewErrorMessage ?? '当前目标的个性计划尚未开放',
+          },
         ),
       );
     }
@@ -220,6 +228,20 @@ void main() {
     );
     expect(find.text('当前目标计划尚未开放'), findsOneWidget);
     expect(find.text('修改健康目标'), findsOneWidget);
+  });
+
+  testWidgets('计划生成失败显示具体校验提示', (tester) async {
+    final api = _FakePlanApi(
+      {'status': 'EMPTY'},
+      previewErrorCode: 'PLAN_TARGET_UNSAFE',
+      previewErrorMessage: '目标体重不在安全减脂范围内',
+    );
+    await _pump(tester, api);
+
+    await tester.tap(find.text('生成减脂计划'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('暂时无法更新：目标体重不在安全减脂范围内'), findsOneWidget);
   });
 
   testWidgets('网络失败保留缓存并允许重试', (tester) async {

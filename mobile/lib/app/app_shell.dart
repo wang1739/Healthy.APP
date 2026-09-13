@@ -273,6 +273,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       TodayPage(
         api: widget.session.api,
         access: widget.session.access,
+        active: _index == 0,
         onProtectedAction: (label) => _requestFeature(label, 0),
         onOpenPlan: () => setState(() => _index = 2),
         onOpenNutrition: () => setState(() => _index = 1),

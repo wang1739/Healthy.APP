@@ -80,6 +80,7 @@ Future<void> _pumpPage(
   double width = 800,
   double textScale = 1,
   DateTime Function()? now,
+  bool active = true,
   VoidCallback? onOpenActivity,
   VoidCallback? onRecordActivity,
   VoidCallback? onOpenSleep,
@@ -101,6 +102,7 @@ Future<void> _pumpPage(
         body: TodayPage(
           api: api,
           access: access,
+          active: active,
           onOpenPlan: onOpenPlan ?? () {},
           onProtectedAction: onProtectedAction ?? (_) {},
           now: now,
@@ -324,6 +326,21 @@ void main() {
 
     expect(api.todayCalls, 2);
     expect(find.textContaining('9月9日'), findsOneWidget);
+  });
+
+  testWidgets('返回今日页时刷新最新摘要', (tester) async {
+    final api = _FakeApi(overview(moduleStatus: 'READY'));
+    await _pumpPage(tester, api, UserAccess.profileComplete, active: false);
+    expect(api.todayCalls, 1);
+
+    api.json = {
+      ...api.json,
+      'hydration': {'status': 'READY', 'consumedMl': 350, 'targetMl': 2000},
+    };
+    await _pumpPage(tester, api, UserAccess.profileComplete, active: true);
+
+    expect(api.todayCalls, 2);
+    expect(find.text('350 / 2000 ml'), findsOneWidget);
   });
 
   testWidgets('窄屏和大字体仍可访问所有核心区域', (tester) async {

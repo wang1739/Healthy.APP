@@ -153,7 +153,13 @@ class _PlanPageState extends ConsumerState<PlanPage> {
       children: [
         const Icon(Icons.cloud_off_outlined, size: 20),
         const SizedBox(width: 8),
-        const Expanded(child: Text('暂时无法更新，正在显示上次加载的计划')),
+        Expanded(
+          child: Text(
+            controller.state.error == null
+                ? '暂时无法更新，正在显示上次加载的计划'
+                : '暂时无法更新：${controller.state.error}',
+          ),
+        ),
         TextButton(onPressed: controller.load, child: const Text('重试')),
       ],
     ),
