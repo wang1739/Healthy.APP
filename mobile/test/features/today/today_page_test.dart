@@ -81,6 +81,7 @@ Future<void> _pumpPage(
   double textScale = 1,
   DateTime Function()? now,
   bool active = true,
+  String sessionKey = 'session-a',
   VoidCallback? onOpenActivity,
   VoidCallback? onRecordActivity,
   VoidCallback? onOpenSleep,
@@ -102,6 +103,7 @@ Future<void> _pumpPage(
         body: TodayPage(
           api: api,
           access: access,
+          sessionKey: sessionKey,
           active: active,
           onOpenPlan: onOpenPlan ?? () {},
           onProtectedAction: onProtectedAction ?? (_) {},
@@ -209,7 +211,9 @@ void main() {
 
     final previewApi = _FakeApi(noPlanApi.json);
     final container = ProviderContainer();
-    await container.read(planControllerProvider(previewApi)).generate();
+    await container
+        .read(planControllerProvider(PlanProviderKey(previewApi, 'session-a')))
+        .generate();
     await _pumpPage(
       tester,
       previewApi,

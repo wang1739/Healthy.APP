@@ -13,6 +13,7 @@ class TodayPage extends ConsumerStatefulWidget {
   const TodayPage({
     required this.api,
     required this.access,
+    required this.sessionKey,
     required this.onProtectedAction,
     required this.onOpenPlan,
     this.active = true,
@@ -34,6 +35,7 @@ class TodayPage extends ConsumerStatefulWidget {
 
   final ApiClient api;
   final UserAccess access;
+  final String sessionKey;
   final bool active;
   final ValueChanged<String> onProtectedAction;
   final VoidCallback onOpenPlan;
@@ -267,7 +269,14 @@ class _TodayPageState extends ConsumerState<TodayPage>
     }
 
     final data = state.data!;
-    final preview = ref.watch(planControllerProvider(widget.api)).state.data;
+    final preview = ref
+        .watch(
+          planControllerProvider(
+            PlanProviderKey(widget.api, widget.sessionKey),
+          ),
+        )
+        .state
+        .data;
     final hasPreview = preview?.kind == PlanKind.preview;
     return [
       if (state.loading) const LinearProgressIndicator(),

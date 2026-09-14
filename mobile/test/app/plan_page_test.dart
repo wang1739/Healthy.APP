@@ -300,6 +300,54 @@ void main() {
     expect(find.text('重试'), findsOneWidget);
   });
 
+  testWidgets('切换账号后请求失败不显示上一账号计划', (tester) async {
+    final api = _FakePlanApi(_plan());
+    var sessionKey = 'session-a';
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: StatefulBuilder(
+            builder: (context, setState) => PlanPage(
+              api: api,
+              access: UserAccess.profileComplete,
+              sessionKey: sessionKey,
+              riskBlocked: false,
+              onProtectedAction: (_) {},
+              onConfirmed: () {},
+              onEditProfile: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('1700'), findsOneWidget);
+
+    api.fail = true;
+    sessionKey = 'session-b';
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: PlanPage(
+            api: api,
+            access: UserAccess.profileComplete,
+            sessionKey: sessionKey,
+            riskBlocked: false,
+            onProtectedAction: (_) {},
+            onConfirmed: () {},
+            onEditProfile: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('1700'), findsNothing);
+    expect(find.text('暂时无法更新'), findsOneWidget);
+  });
+
   testWidgets('确认、重算、暂停和恢复调用计划接口', (tester) async {
     final previewApi = _FakePlanApi(_plan(status: 'PREVIEW'));
     var enteredToday = false;

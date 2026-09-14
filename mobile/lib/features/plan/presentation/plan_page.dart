@@ -63,7 +63,11 @@ class _PlanPageState extends ConsumerState<PlanPage> {
     }
     Future.microtask(
       () => ref
-          .read(planControllerProvider(widget.api))
+          .read(
+            planControllerProvider(
+              PlanProviderKey(widget.api, widget.sessionKey),
+            ),
+          )
           .load(autoPreview: widget.autoPreview),
     );
   }
@@ -73,7 +77,9 @@ class _PlanPageState extends ConsumerState<PlanPage> {
     if (widget.access != UserAccess.profileComplete) return _example();
     if (widget.riskBlocked) return _risk();
 
-    final controller = ref.watch(planControllerProvider(widget.api));
+    final controller = ref.watch(
+      planControllerProvider(PlanProviderKey(widget.api, widget.sessionKey)),
+    );
     final state = controller.state;
     final data = state.data;
     if (data == null && state.loading) {

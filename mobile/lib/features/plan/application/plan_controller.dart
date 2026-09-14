@@ -208,7 +208,23 @@ class PlanController extends ChangeNotifier {
   }
 }
 
+class PlanProviderKey {
+  const PlanProviderKey(this.api, this.sessionKey);
+
+  final ApiClient api;
+  final String sessionKey;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PlanProviderKey &&
+      identical(api, other.api) &&
+      sessionKey == other.sessionKey;
+
+  @override
+  int get hashCode => Object.hash(api, sessionKey);
+}
+
 final planControllerProvider =
-    ChangeNotifierProvider.family<PlanController, ApiClient>(
-      (ref, api) => PlanController(api),
+    ChangeNotifierProvider.family<PlanController, PlanProviderKey>(
+      (ref, key) => PlanController(key.api),
     );
