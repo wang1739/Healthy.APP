@@ -10,20 +10,24 @@ class PlanPage extends ConsumerStatefulWidget {
   const PlanPage({
     required this.api,
     required this.access,
+    required this.sessionKey,
     required this.riskBlocked,
     required this.onProtectedAction,
     required this.onConfirmed,
     required this.onEditProfile,
+    this.active = true,
     this.autoPreview = false,
     super.key,
   });
 
   final ApiClient api;
   final UserAccess access;
+  final String sessionKey;
   final bool riskBlocked;
   final ValueChanged<String> onProtectedAction;
   final VoidCallback onConfirmed;
   final VoidCallback onEditProfile;
+  final bool active;
   final bool autoPreview;
 
   @override
@@ -36,13 +40,32 @@ class _PlanPageState extends ConsumerState<PlanPage> {
   @override
   void initState() {
     super.initState();
-    if (widget.access == UserAccess.profileComplete && !widget.riskBlocked) {
-      Future.microtask(
-        () => ref
-            .read(planControllerProvider(widget.api))
-            .load(autoPreview: widget.autoPreview),
-      );
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant PlanPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.access == UserAccess.profileComplete &&
+        !widget.riskBlocked &&
+        ((!oldWidget.active && widget.active) ||
+            oldWidget.api != widget.api ||
+            oldWidget.sessionKey != widget.sessionKey ||
+            oldWidget.access != widget.access ||
+            oldWidget.riskBlocked != widget.riskBlocked)) {
+      _load();
     }
+  }
+
+  void _load() {
+    if (widget.access != UserAccess.profileComplete || widget.riskBlocked) {
+      return;
+    }
+    Future.microtask(
+      () => ref
+          .read(planControllerProvider(widget.api))
+          .load(autoPreview: widget.autoPreview),
+    );
   }
 
   @override

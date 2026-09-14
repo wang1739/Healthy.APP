@@ -308,7 +308,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       PlanPage(
         api: widget.session.api,
         access: widget.session.access,
+        sessionKey: widget.session.sessionRevision.toString(),
         riskBlocked: widget.session.riskBlocked,
+        active: _index == 2,
         autoPreview: _autoPreview,
         onProtectedAction: (label) => _requestFeature(label, 2),
         onConfirmed: () => setState(() => _index = 0),

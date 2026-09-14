@@ -123,6 +123,7 @@ Future<void> _pump(
   WidgetTester tester,
   _FakePlanApi api, {
   bool autoPreview = false,
+  bool active = true,
   VoidCallback? onConfirmed,
 }) async {
   await tester.pumpWidget(
@@ -134,7 +135,9 @@ Future<void> _pump(
             key: ValueKey(api),
             api: api,
             access: UserAccess.profileComplete,
+            sessionKey: 'session-a',
             riskBlocked: false,
+            active: active,
             autoPreview: autoPreview,
             onProtectedAction: (_) {},
             onConfirmed: onConfirmed ?? () {},
@@ -176,6 +179,48 @@ void main() {
     await _pump(tester, _FakePlanApi({'status': 'EMPTY'}));
     expect(find.text('还没有减脂计划'), findsOneWidget);
     expect(find.text('生成减脂计划'), findsOneWidget);
+  });
+
+  testWidgets('重新进入计划页会刷新当前计划状态', (tester) async {
+    final api = _FakePlanApi(_plan());
+    var active = false;
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: StatefulBuilder(
+            builder: (context, setState) => Column(
+              children: [
+                Expanded(
+                  child: PlanPage(
+                    api: api,
+                    access: UserAccess.profileComplete,
+                    sessionKey: 'session-a',
+                    riskBlocked: false,
+                    active: active,
+                    onProtectedAction: (_) {},
+                    onConfirmed: () {},
+                    onEditProfile: () {},
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => setState(() => active = true),
+                  child: const Text('切回计划'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('暂停计划'), findsOneWidget);
+
+    api.current = _plan(status: 'PAUSED');
+    await tester.tap(find.text('切回计划'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('已暂停'), findsOneWidget);
   });
 
   testWidgets('档案完成后自动进入摘要优先的预览', (tester) async {
