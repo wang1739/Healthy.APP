@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:healthy/app/session_controller.dart';
@@ -7,26 +8,32 @@ import 'package:healthy/features/hydration/domain/hydration_data.dart';
 import 'package:healthy/features/hydration/presentation/hydration_page.dart';
 
 class Fake extends ApiClient {
+  int consumed = 0;
+  int calls = 0;
+
   @override
   Future<HydrationDay> getHydrationDay(
     DateTime d, {
     required String timezone,
-  }) async => HydrationDay.fromJson({
-    'date': '2026-09-08',
-    'status': 'EMPTY',
-    'consumedMl': 0,
-    'targetMl': 2000,
-    'remainingMl': 2000,
-    'progress': 0,
-    'targetSource': 'DEFAULT',
-    'settings': {
-      'defaultCupMl': 250,
-      'effectiveTargetMl': 2000,
-      'reminderEnabled': false,
-      'version': 0,
-    },
-    'entries': [],
-  });
+  }) async {
+    calls++;
+    return HydrationDay.fromJson({
+      'date': '2026-09-08',
+      'status': 'EMPTY',
+      'consumedMl': consumed,
+      'targetMl': 2000,
+      'remainingMl': 2000 - consumed,
+      'progress': consumed / 2000,
+      'targetSource': 'DEFAULT',
+      'settings': {
+        'defaultCupMl': 250,
+        'effectiveTargetMl': 2000,
+        'reminderEnabled': false,
+        'version': 0,
+      },
+      'entries': [],
+    });
+  }
 }
 
 void main() {
@@ -59,6 +66,58 @@ void main() {
     ]) {
       expect(find.text(text), findsOneWidget);
     }
+  });
+
+  testWidgets('重新进入饮水页会刷新当天饮水量', (t) async {
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('flutter_timezone'),
+      (call) async => 'Asia/Shanghai',
+    );
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(
+        const MethodChannel('flutter_timezone'),
+        null,
+      ),
+    );
+    final api = Fake();
+    var active = false;
+    await t.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: StatefulBuilder(
+            builder: (context, setState) => Column(
+              children: [
+                Expanded(
+                  child: HydrationPage(
+                    api: api,
+                    access: UserAccess.profileComplete,
+                    sessionKey: 'user',
+                    active: active,
+                    onProtectedAction: (_) {},
+                    now: () => DateTime(2026, 9, 8),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => setState(() => active = true),
+                  child: const Text('切回饮水'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await t.pumpAndSettle();
+    expect(find.text('已喝 0 ml'), findsOneWidget);
+
+    api.consumed = 500;
+    await t.tap(find.text('切回饮水'));
+    await t.pumpAndSettle();
+
+    expect(api.calls, 2);
+    expect(find.text('已喝 500 ml'), findsOneWidget);
   });
 
   testWidgets('720×1600 与 1.3 倍字体可浏览主要操作', (t) async {

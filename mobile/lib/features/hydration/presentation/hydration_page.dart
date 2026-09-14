@@ -15,12 +15,14 @@ class HydrationPage extends ConsumerStatefulWidget {
     required this.access,
     required this.sessionKey,
     required this.onProtectedAction,
+    this.active = true,
     this.now,
     super.key,
   });
   final ApiClient api;
   final UserAccess access;
   final String sessionKey;
+  final bool active;
   final ValueChanged<String> onProtectedAction;
   final DateTime Function()? now;
   @override
@@ -41,23 +43,37 @@ class _State extends ConsumerState<HydrationPage> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     date = today;
-    if (widget.access == UserAccess.profileComplete) {
-      Future.microtask(
-        () => ref.read(hydrationControllerProvider(key)).load(date),
-      );
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant HydrationPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.api != widget.api ||
+        oldWidget.sessionKey != widget.sessionKey ||
+        oldWidget.access != widget.access) {
+      _load();
+      return;
     }
+    if (!oldWidget.active &&
+        widget.active &&
+        widget.access == UserAccess.profileComplete) {
+      _load(force: true);
+    }
+  }
+
+  void _load({bool force = false}) {
+    if (widget.access != UserAccess.profileComplete) return;
+    Future.microtask(
+      () => ref.read(hydrationControllerProvider(key)).load(date, force: force),
+    );
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed || date == today) return;
     setState(() => date = today);
-    if (widget.access == UserAccess.profileComplete) {
-      Future.microtask(
-        () =>
-            ref.read(hydrationControllerProvider(key)).load(date, force: true),
-      );
-    }
+    _load(force: true);
   }
 
   @override
@@ -68,11 +84,7 @@ class _State extends ConsumerState<HydrationPage> with WidgetsBindingObserver {
 
   void move(int days) {
     setState(() => date = date.add(Duration(days: days)));
-    if (widget.access == UserAccess.profileComplete) {
-      Future.microtask(
-        () => ref.read(hydrationControllerProvider(key)).load(date),
-      );
-    }
+    _load();
   }
 
   void protected(VoidCallback action) {

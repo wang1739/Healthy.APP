@@ -329,6 +329,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         api: widget.session.api,
         access: widget.session.access,
         sessionKey: widget.session.sessionRevision.toString(),
+        active: _index == 5,
         onProtectedAction: (label) => _requestFeature(label, 5),
       ),
     ];
