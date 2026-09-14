@@ -16,6 +16,7 @@ class NutritionPage extends ConsumerStatefulWidget {
     required this.sessionKey,
     required this.onProtectedAction,
     required this.onOpenPlan,
+    this.active = true,
     this.initialDate,
     this.now,
     this.riskBlocked = false,
@@ -25,6 +26,7 @@ class NutritionPage extends ConsumerStatefulWidget {
   final ApiClient api;
   final UserAccess access;
   final String sessionKey;
+  final bool active;
   final ValueChanged<String> onProtectedAction;
   final VoidCallback onOpenPlan;
   final DateTime? initialDate;
@@ -72,6 +74,14 @@ class _NutritionPageState extends ConsumerState<NutritionPage>
         oldWidget.access != widget.access) {
       _setKey();
       _load();
+      return;
+    }
+    if (!oldWidget.active &&
+        widget.active &&
+        widget.access == UserAccess.profileComplete) {
+      Future.microtask(
+        () => ref.read(nutritionControllerProvider(_key)).refresh(),
+      );
     }
   }
 

@@ -12,7 +12,7 @@ class _FakeApi extends ApiClient {
   _FakeApi({this.fail = false, this.target = true}) : super(dio: Dio());
 
   final bool fail;
-  final bool target;
+  bool target;
   int updates = 0;
   int deletes = 0;
 
@@ -157,6 +157,49 @@ void main() {
     expect(find.text('尚未生成减脂计划'), findsOneWidget);
     expect(find.text('生成减脂计划'), findsOneWidget);
     expect(find.byType(LinearProgressIndicator), findsNothing);
+  });
+
+  testWidgets('重新进入饮食页会刷新计划目标', (tester) async {
+    var active = false;
+    final api = _FakeApi(target: false);
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: StatefulBuilder(
+            builder: (context, setState) => Column(
+              children: [
+                Expanded(
+                  child: NutritionPage(
+                    api: api,
+                    access: UserAccess.profileComplete,
+                    sessionKey: 'session-a',
+                    active: active,
+                    initialDate: DateTime(2026, 9, 8),
+                    now: () => DateTime(2026, 9, 8),
+                    onProtectedAction: (_) {},
+                    onOpenPlan: () {},
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => setState(() => active = true),
+                  child: const Text('切回饮食'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('尚未生成减脂计划'), findsOneWidget);
+
+    api.target = true;
+    await tester.tap(find.text('切回饮食'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('目标 1500 kcal'), findsOneWidget);
+    expect(find.text('尚未生成减脂计划'), findsNothing);
   });
 
   testWidgets('未来日期只读，读取失败可重试', (tester) async {
