@@ -6,7 +6,7 @@
 
 共同基线：`codex/account-privacy-center@52a875eba75eebdcd097dc3e0ac208694e37c950`
 
-当前阶段：QA 基线建立；等待后端与 Flutter 候选提交
+当前阶段：后端候选已合入并完成独立 QA 与最小修复；等待 Flutter 候选提交
 
 ## 1. 范围与放行原则
 
@@ -29,7 +29,8 @@
 | QA 工作树 | `E:\Healthy-worktrees\profile-plan-qa-fix` |
 | QA 分支 | `codex/profile-plan-qa-fix` |
 | 基线提交 | `52a875eba75eebdcd097dc3e0ac208694e37c950` |
-| 后端候选 | 等待 `codex/profile-plan-backend-fix` 完整哈希 |
+| 后端候选 | `codex/profile-plan-backend-fix@6654e55f79f45adde98bff1fefb59ce0558f53a0` |
+| 后端合入提交 | `c9a9a716ea16cab8e51a9f490936435352518c43` |
 | Flutter 候选 | 等待 `codex/profile-plan-flutter-fix` 完整哈希 |
 | main 操作 | 不修改、不推送 |
 
@@ -46,6 +47,31 @@
 | 差异与凭据 | `git diff --check` 与高置信凭据扫描 | 基线通过；无空白错误，未发现私钥、GitHub/OpenAI/AWS 高置信凭据或敏感文件名 |
 
 非阻断环境提示：Flutter 报告 18 个受当前约束限制的较新依赖；Flyway 提示 H2 2.4.240 高于其已验证版本；Gradle/JDK 提示未来版本将限制未声明的 native access。
+
+### 3.1 后端候选集成记录
+
+| 检查 | 结果 |
+|---|---|
+| 候选原始定向测试 | 15 项通过，0 失败、0 错误、0 跳过 |
+| 候选原始全量测试 | 175 项通过，0 失败、0 错误、0 跳过 |
+| QA 扩展定向测试 | 25 项通过，覆盖六分区、V13 迁移、计划策略、预览确认、数据删除与饮食建议 |
+| QA 修复后全量测试 | 181 项通过，0 失败、0 错误、0 跳过 |
+| H2 迁移 | 空库 V1→V13 与已有 V12→V13 均通过 |
+| 差异检查 | `git diff --check` 通过；仅有 Windows 行尾转换提示 |
+
+失败驱动与静态复核发现的真实问题均采用最小修复：
+
+- `PlanIntegrationTests.laterRiskBlockHidesActivePlanValues` 首次新增断言失败：风险命中后数据库计划仍为 `ACTIVE`。修复 `ProfileService`，风险命中立即暂停活动计划、删除预览，风险解除不静默恢复；`PlanService` 同时禁止风险状态恢复计划。
+- `HealthDataDeletionIntegrationTests.deletingTheLastActiveVersionAlsoRemovesAnUnconfirmedPreview` 首次失败：同日 `fromDate == toDate` 因开始边界使用 `>` 而未命中。修复为包含开始日，并在最后一个正式版本被删时一并删除残留 `PREVIEW`，避免计划外键残留。
+- 六分区写入原先没有档案版本条件更新，可能静默覆盖并发编辑。所有新分区保存现要求 `expectedVersion`，服务端条件递增 `profileVersion`，旧版本稳定返回 409 中文冲突；事务回滚保护先写后校验路径。
+- `PREVIEW` 原先只绑定计划版本，档案变化后仍可能确认。预览响应和快照增加 `profileVersion`，确认时再次校验档案版本、风险与条件清除重算标记；暂停、恢复和关键档案变化均失效旧预览。
+- 恢复既有 `GET /api/v1/profile` 响应，新增聚合读取固定使用 `GET /api/v1/profile/sections`，符合“保留七步建档接口”的批准规则。
+- 饮食偏好保存后，最近/常用食物建议现按既有中文过敏与禁忌选项、食物名称即时过滤；不改变搜索结果和计划数值。
+- 其他最小修复包括：风险布尔字段禁止缺省清空、非 `FAT_LOSS` 目标写入前返回 422、部分身体测量沿用未改值、测量历史增加 `id DESC` 稳定排序。
+
+后续集成契约：Flutter 新页面必须读取 `/profile/sections`，六个分区 PUT 均发送最近一次响应的 `expectedVersion`，成功后用响应整体替换本地权威状态；409 时刷新而非覆盖。重算预览需保留 `previewId`、`baseVersion` 与 `profileVersion`，确认失败后重新读取档案和当前计划。
+
+尚未解除的环境门禁：V13 尚未在真实 MySQL 8.4 执行；Flutter 页面、缓存、窄屏/大字体与设备流程等待 Flutter 候选后验证。
 
 ## 4. 共同基线静态结论
 
@@ -81,7 +107,7 @@
 |---|---|---|---|
 | IMPACT-01 | 普通字段变化 | 工作状态、饮食偏好等非计划计算输入保存后不标记待重算，不改变当前计划版本 | 待集成；阻断 |
 | IMPACT-02 | 关键基础资料变化 | 出生日期、代谢依据、身高等计算输入真正变化后标记待重算 | 待集成；阻断 |
-| IMPACT-03 | 关键生活方式变化 | 活动水平、睡眠时长、运动天数真正变化后标记待重算 | 待集成；阻断 |
+| IMPACT-03 | 生活方式影响边界 | 仅活动水平变化标记待重算；睡眠时长、运动天数和工作状态直接保存且不污染当前计划 | 后端通过；Flutter 待集成；阻断 |
 | IMPACT-04 | 关键目标变化 | 减脂目标体重或日期真正变化后标记待重算 | 待集成；阻断 |
 | IMPACT-05 | 相同值重存 | 规范化后值未变化时不新增历史、不增加计划版本、不制造待重算 | 待集成 |
 | IMPACT-06 | 新增身体测量 | 追加新历史，不覆盖旧记录；最新值按 `measuredAt` 和稳定兜底排序 | 待集成；阻断 |
@@ -144,7 +170,7 @@
 
 ## 10. 候选集成与发布门禁
 
-收到两个候选完整哈希后，从本分支依次合并并记录合并提交。只修复真实契约差异，优先复用现有 Profile/Plan 服务、API 客户端、Controller、主题和测试辅助；不为六个表单建立通用 schema 引擎。
+后端候选已合入并完成上述 QA 修复。收到 Flutter 候选完整哈希后继续在本分支合入并记录提交；只修复真实契约差异，优先复用现有 Profile/Plan 服务、API 客户端、Controller、主题和测试辅助，不为六个表单建立通用 schema 引擎。
 
 完整验证至少包括：
 

@@ -119,6 +119,7 @@ class PlanIntegrationTests {
                 .andExpect(jsonPath("$.state").value("PREVIEW"))
                 .andExpect(jsonPath("$.baseVersion").value(2))
                 .andExpect(jsonPath("$.previewVersion").value(3))
+                .andExpect(jsonPath("$.profileVersion").value(5))
                 .andReturn().getResponse().getContentAsString();
         String previewId = JsonPath.read(previewJson, "$.previewId");
 
@@ -194,7 +195,8 @@ class PlanIntegrationTests {
         String previewId = JsonPath.read(preview, "$.previewId");
 
         mockMvc.perform(put("/api/v1/profile/sections/body-data").with(user(USER_A))
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"heightCm\":167}"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":4,\"heightCm\":167}"))
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/v1/plans/{id}/recalculation/confirm", planId).with(user(USER_A))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -202,6 +204,47 @@ class PlanIntegrationTests {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("PLAN_PREVIEW_CONFLICT"))
                 .andExpect(jsonPath("$.message").value("计划预览已更新，请刷新后重试"));
+    }
+
+    @Test
+    void pauseAndResumeInvalidateAnUnconfirmedPreview() throws Exception {
+        String planId = createPlan(USER_A);
+        String preview = mockMvc.perform(post("/api/v1/plans/{id}/recalculate", planId).with(user(USER_A))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":1}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String previewId = JsonPath.read(preview, "$.previewId");
+
+        mockMvc.perform(post("/api/v1/plans/{id}/pause", planId).with(user(USER_A)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.state").value("PAUSED"));
+        mockMvc.perform(post("/api/v1/plans/{id}/resume", planId).with(user(USER_A)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.state").value("ACTIVE"));
+        mockMvc.perform(post("/api/v1/plans/{id}/recalculation/confirm", planId).with(user(USER_A))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":1,\"previewId\":\"" + previewId + "\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PLAN_PREVIEW_CONFLICT"));
+    }
+
+    @Test
+    void profileVersionChangeInvalidatesPreviewEvenWhenCurrentPlanNeedsNoRecalculation() throws Exception {
+        String planId = createPlan(USER_A);
+        String preview = mockMvc.perform(post("/api/v1/plans/{id}/recalculate", planId).with(user(USER_A))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":1}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String previewId = JsonPath.read(preview, "$.previewId");
+
+        mockMvc.perform(put("/api/v1/profile/sections/lifestyle").with(user(USER_A))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":4,\"sleepHours\":8.0}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.profileVersion").value(5))
+                .andExpect(jsonPath("$.planNeedsRecalculation").value(false));
+        mockMvc.perform(post("/api/v1/plans/{id}/recalculation/confirm", planId).with(user(USER_A))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"expectedVersion\":1,\"previewId\":\"" + previewId + "\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PLAN_PREVIEW_CONFLICT"))
+                .andExpect(jsonPath("$.message").value("健康档案已更新，请重新生成计划预览"));
     }
 
     @Test
@@ -219,7 +262,11 @@ class PlanIntegrationTests {
 
     @Test
     void laterRiskBlockHidesActivePlanValues() throws Exception {
-        createPlan(USER_A);
+        String planId = createPlan(USER_A);
+        String preview = mockMvc.perform(post("/api/v1/plans/{id}/recalculate", planId).with(user(USER_A))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"expectedVersion\":1}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String previewId = JsonPath.read(preview, "$.previewId");
 
         mockMvc.perform(post("/api/v1/profile/risk-assessment").with(user(USER_A))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -232,6 +279,24 @@ class PlanIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.state").value("RISK_BLOCKED"))
                 .andExpect(jsonPath("$.plan").doesNotExist());
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject(
+                "SELECT status FROM health_plans WHERE id=?", String.class, planId)).isEqualTo("PAUSED");
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM health_plan_versions WHERE id=?", Integer.class, previewId)).isZero();
+        mockMvc.perform(post("/api/v1/plans/{id}/resume", planId).with(user(USER_A)))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("PLAN_RISK_BLOCKED"));
+
+        mockMvc.perform(post("/api/v1/profile/risk-assessment").with(user(USER_A))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"pregnant":false,"breastfeeding":false,"eatingDisorderRisk":false,
+                                 "seriousChronicDisease":false,"unsafeTarget":false}
+                                """))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.riskBlocked").value(false));
+        mockMvc.perform(get("/api/v1/plans/current").with(user(USER_A)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("PAUSED"));
     }
 
     private String createPlan(String userId) throws Exception {

@@ -55,6 +55,7 @@ public final class PlanDtos {
             String planId,
             int baseVersion,
             int previewVersion,
+            int profileVersion,
             String previewId,
             PlanResultResponse plan
     ) {

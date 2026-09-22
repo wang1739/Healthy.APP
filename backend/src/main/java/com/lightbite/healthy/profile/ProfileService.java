@@ -36,6 +36,12 @@ public class ProfileService {
 
     @Transactional
     public ProfileDtos.CompletenessResponse saveProfile(String userId, ProfileDtos.ProfileRequest request) {
+        return saveProfile(userId, request, null);
+    }
+
+    private ProfileDtos.CompletenessResponse saveProfile(
+            String userId, ProfileDtos.ProfileRequest request, Long expectedVersion
+    ) {
         ensureProfile(userId);
         Map<String, Object> existing = jdbc.queryForMap("SELECT * FROM health_profiles WHERE user_id = ?", userId);
         String effectiveSex = request.sex() != null ? request.sex() : (String) existing.get("sex");
@@ -125,9 +131,7 @@ public class ProfileService {
             validateComplete(userId);
             jdbc.update("UPDATE health_profiles SET completed = TRUE, current_step = 7 WHERE user_id = ?", userId);
         }
-        jdbc.update("""
-                UPDATE health_profiles SET version = version + 1, updated_at = ? WHERE user_id = ?
-                """, Timestamp.from(Instant.now()), userId);
+        bumpProfileVersion(userId, expectedVersion);
         return completeness(userId);
     }
 
@@ -135,6 +139,12 @@ public class ProfileService {
     public ProfileDtos.MeasurementResponse addMeasurement(
             String userId,
             ProfileDtos.MeasurementRequest request
+    ) {
+        return addMeasurement(userId, request, true);
+    }
+
+    private ProfileDtos.MeasurementResponse addMeasurement(
+            String userId, ProfileDtos.MeasurementRequest request, boolean incrementVersion
     ) {
         if (request.weightKg() == null) {
             throw invalid("weightKg", "请输入体重");
@@ -157,11 +167,15 @@ public class ProfileService {
                 """, id, userId, request.weightKg(), request.waistCm(), request.bodyFatPercent(), Timestamp.from(now));
         jdbc.update("UPDATE health_profiles SET current_step = CASE WHEN current_step < 2 THEN 2 ELSE current_step END WHERE user_id = ?", userId);
         if (wasComplete && weightChanged) {
-            jdbc.update("""
-                    UPDATE health_profiles
-                    SET plan_needs_recalculation = TRUE, version = version + 1, updated_at = ?
-                    WHERE user_id = ?
-                    """, Timestamp.from(Instant.now()), userId);
+            if (incrementVersion) {
+                jdbc.update("""
+                        UPDATE health_profiles
+                        SET plan_needs_recalculation = TRUE, version = version + 1, updated_at = ?
+                        WHERE user_id = ?
+                        """, Timestamp.from(Instant.now()), userId);
+            } else {
+                jdbc.update("UPDATE health_profiles SET plan_needs_recalculation = TRUE WHERE user_id = ?", userId);
+            }
             invalidatePlanPreviews(userId);
         }
         return new ProfileDtos.MeasurementResponse(
@@ -171,12 +185,16 @@ public class ProfileService {
     public List<ProfileDtos.MeasurementResponse> measurements(String userId) {
         return jdbc.query("""
                 SELECT id, weight_kg, waist_cm, body_fat_percent, measured_at
-                FROM body_measurements WHERE user_id = ? ORDER BY measured_at DESC
+                FROM body_measurements WHERE user_id = ? ORDER BY measured_at DESC, id DESC
                 """, (resultSet, rowNum) -> measurement(resultSet), userId);
     }
 
     @Transactional
     public void savePreferences(String userId, ProfileDtos.PreferencesRequest request) {
+        writePreferences(userId, request);
+    }
+
+    private void writePreferences(String userId, ProfileDtos.PreferencesRequest request) {
         String dietType = request.dietType() == null ? "BALANCED" : request.dietType();
         requireEnum(dietType, DIET_TYPES, "dietType");
         ensureProfile(userId);
@@ -190,20 +208,46 @@ public class ProfileService {
 
     @Transactional
     public ProfileDtos.RiskResponse saveRisk(String userId, ProfileDtos.RiskRequest request) {
+        return saveRisk(userId, request, null);
+    }
+
+    private ProfileDtos.RiskResponse saveRisk(
+            String userId, ProfileDtos.RiskRequest request, Long expectedVersion
+    ) {
         ensureProfile(userId);
+        boolean wasBlocked = Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT risk_blocked FROM health_profiles WHERE user_id = ?", Boolean.class, userId));
         LocalDate birthDate = jdbc.queryForObject(
                 "SELECT birth_date FROM health_profiles WHERE user_id = ?", LocalDate.class, userId);
         boolean minor = birthDate != null && Period.between(birthDate, LocalDate.now()).getYears() < 18;
-        boolean blocked = minor || request.pregnant() || request.breastfeeding()
-                || request.eatingDisorderRisk() || request.seriousChronicDisease() || request.unsafeTarget();
+        boolean pregnant = Boolean.TRUE.equals(request.pregnant());
+        boolean breastfeeding = Boolean.TRUE.equals(request.breastfeeding());
+        boolean eatingDisorderRisk = Boolean.TRUE.equals(request.eatingDisorderRisk());
+        boolean seriousChronicDisease = Boolean.TRUE.equals(request.seriousChronicDisease());
+        boolean unsafeTarget = Boolean.TRUE.equals(request.unsafeTarget());
+        boolean blocked = minor || pregnant || breastfeeding
+                || eatingDisorderRisk || seriousChronicDisease || unsafeTarget;
         jdbc.update("""
                 INSERT INTO health_risk_answers
                 (id, user_id, pregnant, breastfeeding, eating_disorder_risk,
                  serious_chronic_disease, unsafe_target, risk_blocked)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, UUID.randomUUID().toString(), userId, request.pregnant(), request.breastfeeding(),
-                request.eatingDisorderRisk(), request.seriousChronicDisease(), request.unsafeTarget(), blocked);
+                """, UUID.randomUUID().toString(), userId, pregnant, breastfeeding,
+                eatingDisorderRisk, seriousChronicDisease, unsafeTarget, blocked);
         jdbc.update("UPDATE health_profiles SET risk_blocked = ?, current_step = 6 WHERE user_id = ?", blocked, userId);
+        if (blocked != wasBlocked) {
+            Instant now = Instant.now();
+            invalidatePlanPreviews(userId);
+            if (blocked) {
+                jdbc.update("""
+                        UPDATE health_plans SET status = 'PAUSED', paused_at = ?, updated_at = ?
+                        WHERE user_id = ? AND status = 'ACTIVE'
+                        """, Timestamp.from(now), Timestamp.from(now), userId);
+            }
+        }
+        if (expectedVersion != null || blocked != wasBlocked) {
+            bumpProfileVersion(userId, expectedVersion);
+        }
         return new ProfileDtos.RiskResponse(
                 blocked,
                 blocked ? "当前情况不适合自动生成普通减脂计划，请咨询医生或注册营养师" : "未发现自动计划拦截项"
@@ -238,43 +282,76 @@ public class ProfileService {
 
     @Transactional
     public ProfileDtos.ProfileSectionsResponse saveBasicInfo(String userId, ProfileDtos.BasicInfoRequest request) {
+        requireAny("请至少修改一项基本信息",
+                request.birthDate(), request.sex(), request.metabolicBasis());
         saveProfile(userId, new ProfileDtos.ProfileRequest(request.birthDate(), request.sex(),
-                request.metabolicBasis(), null, null, null, null, null, null, null, null, null, null));
+                request.metabolicBasis(), null, null, null, null, null, null, null, null, null, null),
+                request.expectedVersion());
         return sections(userId);
     }
 
     @Transactional
     public ProfileDtos.ProfileSectionsResponse saveBodyData(String userId, ProfileDtos.BodyDataRequest request) {
-        if (request.heightCm() != null) {
-            saveProfile(userId, new ProfileDtos.ProfileRequest(null, null, null, request.heightCm(),
-                    null, null, null, null, null, null, null, null, null));
-        }
+        requireAny("请至少修改一项身体数据",
+                request.heightCm(), request.weightKg(), request.waistCm(), request.bodyFatPercent());
+        saveProfile(userId, new ProfileDtos.ProfileRequest(null, null, null, request.heightCm(),
+                null, null, null, null, null, null, null, null, null), request.expectedVersion());
         if (request.weightKg() != null || request.waistCm() != null || request.bodyFatPercent() != null) {
-            BigDecimal weight = request.weightKg();
-            if (weight == null) {
-                List<BigDecimal> weights = jdbc.query("""
-                        SELECT weight_kg FROM body_measurements WHERE user_id = ?
+            List<ProfileDtos.MeasurementResponse> measurements = jdbc.query("""
+                        SELECT id, weight_kg, waist_cm, body_fat_percent, measured_at
+                        FROM body_measurements WHERE user_id = ?
                         ORDER BY measured_at DESC, id DESC LIMIT 1
-                        """, (resultSet, rowNum) -> resultSet.getBigDecimal("weight_kg"), userId);
-                weight = weights.isEmpty() ? null : weights.get(0);
-            }
+                        """, (resultSet, rowNum) -> measurement(resultSet), userId);
+            ProfileDtos.MeasurementResponse latest = measurements.isEmpty() ? null : measurements.get(0);
             addMeasurement(userId, new ProfileDtos.MeasurementRequest(
-                    weight, request.waistCm(), request.bodyFatPercent()));
+                    request.weightKg() != null ? request.weightKg() : latest == null ? null : latest.weightKg(),
+                    request.waistCm() != null ? request.waistCm() : latest == null ? null : latest.waistCm(),
+                    request.bodyFatPercent() != null
+                            ? request.bodyFatPercent() : latest == null ? null : latest.bodyFatPercent()), false);
         }
         return sections(userId);
     }
 
     @Transactional
     public ProfileDtos.ProfileSectionsResponse saveLifestyle(String userId, ProfileDtos.LifestyleRequest request) {
+        requireAny("请至少修改一项生活方式",
+                request.activityLevel(), request.workStyle(), request.sleepHours(), request.exerciseDays());
         saveProfile(userId, new ProfileDtos.ProfileRequest(null, null, null, null, request.activityLevel(),
-                request.workStyle(), request.sleepHours(), request.exerciseDays(), null, null, null, null, null));
+                request.workStyle(), request.sleepHours(), request.exerciseDays(), null, null, null, null, null),
+                request.expectedVersion());
         return sections(userId);
     }
 
     @Transactional
     public ProfileDtos.ProfileSectionsResponse saveHealthGoal(String userId, ProfileDtos.HealthGoalRequest request) {
+        requireAny("请至少修改一项健康目标",
+                request.goalType(), request.targetWeightKg(), request.targetDate());
+        if (request.goalType() != null && !"FAT_LOSS".equals(request.goalType())) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "PLAN_GOAL_UNSUPPORTED", "当前目标的个性计划尚未开放");
+        }
         saveProfile(userId, new ProfileDtos.ProfileRequest(null, null, null, null, null, null, null, null,
-                request.goalType(), request.targetWeightKg(), request.targetDate(), null, null));
+                request.goalType(), request.targetWeightKg(), request.targetDate(), null, null),
+                request.expectedVersion());
+        return sections(userId);
+    }
+
+    @Transactional
+    public ProfileDtos.ProfileSectionsResponse saveDietaryPreferences(
+            String userId, ProfileDtos.PreferencesRequest request
+    ) {
+        long expectedVersion = requireExpectedVersion(request.expectedVersion());
+        if (request.dietType() == null || request.dietType().isBlank()) {
+            throw invalid("dietType", "请选择饮食方式");
+        }
+        writePreferences(userId, request);
+        bumpProfileVersion(userId, expectedVersion);
+        return sections(userId);
+    }
+
+    @Transactional
+    public ProfileDtos.ProfileSectionsResponse saveRiskInfo(String userId, ProfileDtos.RiskRequest request) {
+        saveRisk(userId, request, requireExpectedVersion(request.expectedVersion()));
         return sections(userId);
     }
 
@@ -315,6 +392,11 @@ public class ProfileService {
                 Boolean.TRUE.equals(profile.get("completed")) && profile.get("metabolic_basis") != null,
                 Boolean.TRUE.equals(profile.get("plan_needs_recalculation")),
                 ((Number) profile.get("version")).longValue());
+    }
+
+    public Map<String, Object> profile(String userId) {
+        ensureProfile(userId);
+        return jdbc.queryForMap("SELECT * FROM health_profiles WHERE user_id = ?", userId);
     }
 
     private void ensureProfile(String userId) {
@@ -395,6 +477,38 @@ public class ProfileService {
 
     private boolean bool(Object value) {
         return Boolean.TRUE.equals(value);
+    }
+
+    private void requireAny(String message, Object... values) {
+        for (Object value : values) {
+            if (value != null) {
+                return;
+            }
+        }
+        throw new ApiException(HttpStatus.BAD_REQUEST, "PROFILE_SECTION_EMPTY", message);
+    }
+
+    private long requireExpectedVersion(Long expectedVersion) {
+        if (expectedVersion == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST,
+                    "PROFILE_VERSION_REQUIRED", "请刷新健康档案后重试");
+        }
+        return expectedVersion;
+    }
+
+    private void bumpProfileVersion(String userId, Long expectedVersion) {
+        Timestamp now = Timestamp.from(Instant.now());
+        int updated = expectedVersion == null
+                ? jdbc.update("UPDATE health_profiles SET version = version + 1, updated_at = ? WHERE user_id = ?",
+                        now, userId)
+                : jdbc.update("""
+                        UPDATE health_profiles SET version = version + 1, updated_at = ?
+                        WHERE user_id = ? AND version = ?
+                        """, now, userId, expectedVersion);
+        if (updated == 0) {
+            throw new ApiException(HttpStatus.CONFLICT,
+                    "PROFILE_VERSION_CONFLICT", "健康档案已更新，请刷新后重试");
+        }
     }
 
     private ApiException invalid(String field, String message) {

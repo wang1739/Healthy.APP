@@ -116,6 +116,7 @@ public class HealthDataDeletionService {
                 + "JOIN task_templates t ON t.id=i.template_id WHERE t.plan_id=?)", planId);
         jdbc.update("DELETE FROM task_instances WHERE template_id IN (SELECT id FROM task_templates WHERE plan_id=?)", planId);
         jdbc.update("DELETE FROM task_templates WHERE plan_id=?", planId);
+        jdbc.update("DELETE FROM health_plan_versions WHERE plan_id=?", planId);
         jdbc.update("DELETE FROM health_plans WHERE id=? AND user_id=?", planId, userId);
     }
 
@@ -163,7 +164,7 @@ public class HealthDataDeletionService {
     }
 
     private String rangeClause(String column, LocalDate from, LocalDate to) {
-        return (from == null ? "" : " AND " + column + ">?") + (to == null ? "" : " AND " + column + "<=?");
+        return (from == null ? "" : " AND " + column + ">=?") + (to == null ? "" : " AND " + column + "<=?");
     }
 
     private Object[] params(String userId, LocalDate from, LocalDate to) {

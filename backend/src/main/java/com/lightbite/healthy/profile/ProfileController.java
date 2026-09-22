@@ -2,6 +2,7 @@ package com.lightbite.healthy.profile;
 
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,8 +24,8 @@ public class ProfileController {
     }
 
     @GetMapping
-    ProfileDtos.ProfileSectionsResponse profile(Authentication authentication) {
-        return profileService.sections(authentication.getName());
+    Map<String, Object> profile(Authentication authentication) {
+        return profileService.profile(authentication.getName());
     }
 
     @GetMapping("/sections")
@@ -53,8 +54,7 @@ public class ProfileController {
     @PutMapping("/sections/dietary-preferences")
     ProfileDtos.ProfileSectionsResponse saveDietaryPreferences(Authentication authentication,
             @Valid @RequestBody ProfileDtos.PreferencesRequest request) {
-        profileService.savePreferences(authentication.getName(), request);
-        return profileService.sections(authentication.getName());
+        return profileService.saveDietaryPreferences(authentication.getName(), request);
     }
 
     @PutMapping("/sections/health-goal")
@@ -66,8 +66,7 @@ public class ProfileController {
     @PutMapping("/sections/risk-info")
     ProfileDtos.ProfileSectionsResponse saveRiskInfo(Authentication authentication,
             @Valid @RequestBody ProfileDtos.RiskRequest request) {
-        profileService.saveRisk(authentication.getName(), request);
-        return profileService.sections(authentication.getName());
+        return profileService.saveRiskInfo(authentication.getName(), request);
     }
 
     @PutMapping

@@ -157,7 +157,7 @@ public class PlanService {
             throw conflict("PLAN_PREVIEW_CONFLICT", "计划预览已更新，请刷新后重试");
         }
         return new PlanDtos.RecalculationPreviewResponse(
-                "PREVIEW", planId, request.expectedVersion(), nextVersion, previewId,
+                "PREVIEW", planId, request.expectedVersion(), nextVersion, profile.profileVersion(), previewId,
                 PlanDtos.PlanResultResponse.from(result));
     }
 
@@ -175,6 +175,16 @@ public class PlanService {
         if (previews.isEmpty() || number(previews.get(0), "version_number") != request.expectedVersion() + 1) {
             throw conflict("PLAN_PREVIEW_CONFLICT", "计划预览已更新，请刷新后重试");
         }
+        Map<String, Object> preview = previews.get(0);
+        Map<String, Object> profileState = jdbc.queryForMap(
+                "SELECT version,risk_blocked FROM health_profiles WHERE user_id=?", userId);
+        if (bool(profileState, "risk_blocked")) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "PLAN_RISK_BLOCKED",
+                    "当前情况不适合自动生成普通减脂计划，请咨询医生或注册营养师");
+        }
+        if (number(preview, "profile_version") != number(profileState, "version")) {
+            throw conflict("PLAN_PREVIEW_CONFLICT", "健康档案已更新，请重新生成计划预览");
+        }
         int nextVersion = request.expectedVersion() + 1;
         LocalDate today = LocalDate.now();
         optimisticVersionUpdate(userId, planId, request.expectedVersion(), nextVersion, today);
@@ -187,13 +197,20 @@ public class PlanService {
             throw conflict("PLAN_PREVIEW_CONFLICT", "计划预览已更新，请刷新后重试");
         }
         jdbc.update("DELETE FROM health_plan_versions WHERE plan_id=? AND status='PREVIEW'", planId);
-        jdbc.update("UPDATE health_profiles SET plan_needs_recalculation=FALSE WHERE user_id=?", userId);
+        int cleared = jdbc.update("""
+                UPDATE health_profiles SET plan_needs_recalculation=FALSE
+                WHERE user_id=? AND version=? AND risk_blocked=FALSE
+                """, userId, number(preview, "profile_version"));
+        if (cleared == 0) {
+            throw conflict("PLAN_PREVIEW_CONFLICT", "健康档案已更新，请重新生成计划预览");
+        }
         return current(userId);
     }
 
     @Transactional
     public PlanDtos.CurrentResponse pause(String userId, String planId) {
         Map<String, Object> plan = ownedPlan(userId, planId, true);
+        jdbc.update("DELETE FROM health_plan_versions WHERE plan_id=? AND status='PREVIEW'", planId);
         if ("PAUSED".equals(plan.get("status"))) {
             return current(userId);
         }
@@ -205,6 +222,12 @@ public class PlanService {
     @Transactional
     public PlanDtos.CurrentResponse resume(String userId, String planId) {
         Map<String, Object> plan = ownedPlan(userId, planId, true);
+        if (Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT risk_blocked FROM health_profiles WHERE user_id=?", Boolean.class, userId))) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "PLAN_RISK_BLOCKED",
+                    "当前情况不适合恢复普通减脂计划，请咨询医生或注册营养师");
+        }
+        jdbc.update("DELETE FROM health_plan_versions WHERE plan_id=? AND status='PREVIEW'", planId);
         if ("ACTIVE".equals(plan.get("status"))) {
             return current(userId);
         }

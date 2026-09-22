@@ -55,7 +55,8 @@ class ProfileSectionsIntegrationTests {
 
         mockMvc.perform(get("/api/v1/profile").with(user(USER_A)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.bodyData.latestMeasurement.weightKg").value(62.5));
+                .andExpect(jsonPath("$.height_cm").value(165))
+                .andExpect(jsonPath("$.bodyData").doesNotExist());
         mockMvc.perform(get("/api/v1/profile/sections").with(user(USER_B)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.bodyData.latestMeasurement.weightKg").value(78.0))
@@ -65,48 +66,48 @@ class ProfileSectionsIntegrationTests {
     @Test
     void savesAllSixSectionsIndependentlyAndMarksOnlyCriticalChanges() throws Exception {
         put("lifestyle", USER_A, """
-                {"workStyle":"ACTIVE","sleepHours":8.0,"exerciseDays":4}
+                {"expectedVersion":4,"workStyle":"ACTIVE","sleepHours":8.0,"exerciseDays":4}
                 """).andExpect(status().isOk())
                 .andExpect(jsonPath("$.lifestyle.workStyle").value("ACTIVE"))
                 .andExpect(jsonPath("$.planNeedsRecalculation").value(false));
 
         put("dietary-preferences", USER_A, """
-                {"dietType":"HIGH_PROTEIN","allergies":"花生、牛奶","avoidFoods":"香菜"}
+                {"expectedVersion":5,"dietType":"HIGH_PROTEIN","allergies":"花生、牛奶","avoidFoods":"香菜"}
                 """).andExpect(status().isOk())
                 .andExpect(jsonPath("$.dietaryPreferences.dietType").value("HIGH_PROTEIN"))
                 .andExpect(jsonPath("$.planNeedsRecalculation").value(false));
 
         put("body-data", USER_A, """
-                {"weightKg":62.5,"waistCm":71,"bodyFatPercent":24.5}
+                {"expectedVersion":6,"weightKg":62.5,"waistCm":71,"bodyFatPercent":24.5}
                 """).andExpect(status().isOk())
                 .andExpect(jsonPath("$.bodyData.latestMeasurement.waistCm").value(71))
                 .andExpect(jsonPath("$.planNeedsRecalculation").value(false));
 
         put("risk-info", USER_A, """
-                {"pregnant":false,"breastfeeding":false,"eatingDisorderRisk":true,
+                {"expectedVersion":7,"pregnant":false,"breastfeeding":false,"eatingDisorderRisk":true,
                  "seriousChronicDisease":false,"unsafeTarget":false}
                 """).andExpect(status().isOk())
                 .andExpect(jsonPath("$.riskInfo.riskBlocked").value(true))
                 .andExpect(jsonPath("$.planNeedsRecalculation").value(false));
 
         jdbc.update("UPDATE health_profiles SET risk_blocked=FALSE WHERE user_id=?", USER_A);
-        put("basic-info", USER_A, "{\"birthDate\":\"1994-06-18\",\"sex\":\"FEMALE\"}")
+        put("basic-info", USER_A, "{\"expectedVersion\":8,\"birthDate\":\"1994-06-18\",\"sex\":\"FEMALE\"}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.planNeedsRecalculation").value(true));
 
         jdbc.update("UPDATE health_profiles SET plan_needs_recalculation=FALSE WHERE user_id=?", USER_A);
-        put("body-data", USER_A, "{\"heightCm\":166}")
+        put("body-data", USER_A, "{\"expectedVersion\":9,\"heightCm\":166}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.planNeedsRecalculation").value(true));
 
         jdbc.update("UPDATE health_profiles SET plan_needs_recalculation=FALSE WHERE user_id=?", USER_A);
-        put("lifestyle", USER_A, "{\"activityLevel\":\"MODERATE\"}")
+        put("lifestyle", USER_A, "{\"expectedVersion\":10,\"activityLevel\":\"MODERATE\"}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.planNeedsRecalculation").value(true));
 
         jdbc.update("UPDATE health_profiles SET plan_needs_recalculation=FALSE WHERE user_id=?", USER_A);
         put("health-goal", USER_A, """
-                {"goalType":"FAT_LOSS","targetWeightKg":54,"targetDate":"2027-04-01"}
+                {"expectedVersion":11,"goalType":"FAT_LOSS","targetWeightKg":54,"targetDate":"2027-04-01"}
                 """).andExpect(status().isOk())
                 .andExpect(jsonPath("$.healthGoal.targetWeightKg").value(54))
                 .andExpect(jsonPath("$.planNeedsRecalculation").value(true));
@@ -118,12 +119,53 @@ class ProfileSectionsIntegrationTests {
     @Test
     void keepsExistingValidationAndAuthenticationBoundaries() throws Exception {
         mockMvc.perform(get("/api/v1/profile/sections")).andExpect(status().isUnauthorized());
-        put("basic-info", USER_A, "{\"birthDate\":\"2030-01-01\"}")
+        put("basic-info", USER_A, "{\"expectedVersion\":4,\"birthDate\":\"2030-01-01\"}")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("出生日期不正确"));
-        put("lifestyle", USER_A, "{\"activityLevel\":\"EXTREME\"}")
+        put("lifestyle", USER_A, "{\"expectedVersion\":4,\"activityLevel\":\"EXTREME\"}")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("选项不受支持"));
+    }
+
+    @Test
+    void rejectsStaleSectionWritesMissingRiskFieldsAndUnavailableGoals() throws Exception {
+        put("basic-info", USER_A,
+                "{\"expectedVersion\":4,\"birthDate\":\"1994-06-18\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.profileVersion").value(5));
+
+        put("lifestyle", USER_A,
+                "{\"expectedVersion\":4,\"workStyle\":\"ACTIVE\"}")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PROFILE_VERSION_CONFLICT"))
+                .andExpect(jsonPath("$.message").value("健康档案已更新，请刷新后重试"));
+        assertThat(jdbc.queryForObject("SELECT work_style FROM health_profiles WHERE user_id=?",
+                String.class, USER_A)).isEqualTo("SEDENTARY");
+
+        put("risk-info", USER_A, "{\"expectedVersion\":5,\"pregnant\":true}")
+                .andExpect(status().isBadRequest());
+
+        put("health-goal", USER_A,
+                "{\"expectedVersion\":5,\"goalType\":\"MUSCLE_GAIN\"}")
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("PLAN_GOAL_UNSUPPORTED"));
+        assertThat(jdbc.queryForObject("SELECT goal_type FROM health_goals WHERE user_id=?",
+                String.class, USER_A)).isEqualTo("FAT_LOSS");
+        assertThat(jdbc.queryForObject("SELECT version FROM health_profiles WHERE user_id=?",
+                Integer.class, USER_A)).isEqualTo(5);
+    }
+
+    @Test
+    void partialBodySaveCarriesForwardUnchangedMeasurementFields() throws Exception {
+        put("body-data", USER_A, "{\"expectedVersion\":4,\"waistCm\":73}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.bodyData.latestMeasurement.weightKg").value(62.5))
+                .andExpect(jsonPath("$.bodyData.latestMeasurement.waistCm").value(73))
+                .andExpect(jsonPath("$.bodyData.latestMeasurement.bodyFatPercent").value(25))
+                .andExpect(jsonPath("$.planNeedsRecalculation").value(false))
+                .andExpect(jsonPath("$.profileVersion").value(5));
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM body_measurements WHERE user_id=?",
+                Integer.class, USER_A)).isEqualTo(2);
     }
 
     private org.springframework.test.web.servlet.ResultActions put(String section, String userId, String body)
