@@ -194,27 +194,49 @@ class ApiClient {
   );
 
   Future<Map<String, dynamic>> previewHealthDataDeletion(
-    List<String> types,
-  ) async => Map<String, dynamic>.from(
+    List<String> types, {
+    DateTime? fromDate,
+    DateTime? toDate,
+  }) async => Map<String, dynamic>.from(
     (await _authorized(
           'POST',
           '/health-data-deletion/preview',
-          data: {'dataTypes': types},
+          data: {
+            'dataTypes': types,
+            if (fromDate != null) 'fromDate': formatLocalDate(fromDate),
+            if (toDate != null) 'toDate': formatLocalDate(toDate),
+          },
         )).data
         as Map,
   );
 
   Future<Map<String, dynamic>> deleteHealthData(
     List<String> types,
-    String code,
-  ) async => Map<String, dynamic>.from(
+    String code, {
+    DateTime? fromDate,
+    DateTime? toDate,
+  }) async => Map<String, dynamic>.from(
     (await _authorized(
           'POST',
           '/health-data-deletion',
-          data: {'dataTypes': types, 'code': code},
+          data: {
+            'dataTypes': types,
+            if (fromDate != null) 'fromDate': formatLocalDate(fromDate),
+            if (toDate != null) 'toDate': formatLocalDate(toDate),
+            'code': code,
+          },
         )).data
         as Map,
   );
+
+  Future<ReportPdf> downloadDataExportPdf(String id) async {
+    final response = await _authorized(
+      'GET',
+      '/data-exports/$id/download',
+      responseType: ResponseType.bytes,
+    );
+    return _pdfFromResponse(response, fallback: '轻食记-数据导出.pdf');
+  }
 
   Future<Map<String, dynamic>> requestAccountDeletion(String code) async =>
       Map<String, dynamic>.from(
@@ -946,6 +968,13 @@ class ApiClient {
       '/reports/$id/pdf',
       responseType: ResponseType.bytes,
     );
+    return _pdfFromResponse(response, fallback: '轻食记-健康报告.pdf');
+  }
+
+  ReportPdf _pdfFromResponse(
+    Response<dynamic> response, {
+    required String fallback,
+  }) {
     final data = response.data;
     final bytes = data is Uint8List
         ? data
@@ -955,9 +984,10 @@ class ApiClient {
       r"filename\*=UTF-8''([^;]+)",
       caseSensitive: false,
     ).firstMatch(disposition);
-    final fallback = RegExp(r'filename="?([^";]+)').firstMatch(disposition);
+    final fallbackMatch = RegExp(r'filename="?([^";]+)')
+        .firstMatch(disposition);
     final rawName = encoded == null
-        ? fallback?.group(1) ?? '轻食记-健康报告.pdf'
+        ? fallbackMatch?.group(1) ?? fallback
         : Uri.decodeComponent(encoded.group(1)!);
     return ReportPdf(
       bytes: bytes,

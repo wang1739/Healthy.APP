@@ -127,7 +127,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   }
 
   void _syncSleepReminder() {
-    if (widget.session.access != UserAccess.profileComplete) return;
+    if (widget.session.access != UserAccess.profileComplete ||
+        !widget.session.healthAuthorized) {
+      return;
+    }
     unawaited(
       (widget.sleepReminderScheduler ?? SleepReminderScheduler.instance).sync(
         widget.session.accountKey,
@@ -136,7 +139,10 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   }
 
   void _syncTaskNotifications() {
-    if (widget.session.access == UserAccess.guest) return;
+    if (widget.session.access == UserAccess.guest ||
+        !widget.session.healthAuthorized) {
+      return;
+    }
     unawaited(
       (widget.taskNotificationScheduler ?? TaskNotificationScheduler.instance)
           .sync(widget.session.accountKey)
@@ -331,7 +337,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       ),
     ];
     final wide = MediaQuery.sizeOf(context).width >= 900;
-    final content = IndexedStack(index: _index, children: pages);
+    final content = IndexedStack(
+      key: ValueKey(widget.session.sessionRevision),
+      index: _index,
+      children: pages,
+    );
 
     if (wide) {
       final expanded = _hovered || _pinned;

@@ -1,6 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:healthy/app/session_controller.dart';
 import 'package:healthy/core/api/api_client.dart';
+import 'package:healthy/features/report/application/report_controller.dart';
+
+Map<String, Map<String, dynamic>> latestPrivacyDocuments(Iterable values) {
+  final latest = <String, Map<String, dynamic>>{};
+  for (final value in values) {
+    final document = Map<String, dynamic>.from(value as Map);
+    final type = document['type']?.toString() ?? '';
+    final current = latest[type];
+    final effectiveAt = DateTime.tryParse(
+      document['effectiveAt']?.toString() ?? '',
+    );
+    final currentAt = DateTime.tryParse(
+      current?['effectiveAt']?.toString() ?? '',
+    );
+    if (current == null ||
+        (effectiveAt != null &&
+            (currentAt == null || effectiveAt.isAfter(currentAt)))) {
+      latest[type] = document;
+    }
+  }
+  return latest;
+}
 
 class DeviceManagementPage extends StatefulWidget {
   const DeviceManagementPage({
@@ -132,8 +154,13 @@ class SecurityEventsPage extends StatelessWidget {
 }
 
 class PrivacyCenterPage extends StatefulWidget {
-  const PrivacyCenterPage({required this.api, super.key});
+  const PrivacyCenterPage({
+    required this.api,
+    required this.session,
+    super.key,
+  });
   final ApiClient api;
+  final SessionController session;
   @override
   State<PrivacyCenterPage> createState() => _PrivacyCenterPageState();
 }
@@ -186,17 +213,17 @@ class _PrivacyCenterPageState extends State<PrivacyCenterPage> {
             false;
         if (!ok) return;
         await widget.api.withdrawHealthAuthorization();
+        await widget.session.healthDataChanged(healthAuthorized: false);
       } else {
-        final docs = (_data?['latestDocuments'] as List? ?? []).cast<Map>();
-        Map? doc;
-        for (final item in docs) {
-          if (item['type'] == 'HEALTH_DATA_AUTHORIZATION') doc = item;
-        }
+        final doc = latestPrivacyDocuments(
+          _data?['latestDocuments'] as List? ?? const [],
+        )['HEALTH_DATA_AUTHORIZATION'];
         if (doc == null) throw const FormatException('未找到健康数据授权文件');
         await widget.api.acceptConsent(
           'HEALTH_DATA_AUTHORIZATION',
           doc['version'].toString(),
         );
+        await widget.session.healthDataChanged(healthAuthorized: true);
       }
       await _load();
     } catch (e) {
@@ -216,7 +243,10 @@ class _PrivacyCenterPageState extends State<PrivacyCenterPage> {
         ),
       );
     }
-    final docs = (_data!['latestDocuments'] as List? ?? []).cast<Map>();
+    final docs = latestPrivacyDocuments(
+      _data!['latestDocuments'] as List? ?? const [],
+    ).values.toList();
+    final history = (_data!['history'] as List? ?? const []).cast<Map>();
     return Scaffold(
       appBar: AppBar(title: const Text('隐私中心')),
       body: ListView(
@@ -229,6 +259,13 @@ class _PrivacyCenterPageState extends State<PrivacyCenterPage> {
             ),
             value: _data!['healthAuthorized'] == true,
             onChanged: (_) => _toggleHealth(),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              '隐私政策已同意版本：${_data!['acceptedPrivacyVersion'] ?? '暂无'}\n'
+              '健康授权已同意版本：${_data!['acceptedHealthVersion'] ?? '暂无'}',
+            ),
           ),
           const Divider(),
           ...docs.map(
@@ -244,6 +281,23 @@ class _PrivacyCenterPageState extends State<PrivacyCenterPage> {
               ),
             ),
           ),
+          if (history.isNotEmpty) ...[
+            const Divider(height: 32),
+            Text('同意与撤回历史', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            ...history.map(
+              (event) => ListTile(
+                dense: true,
+                title: Text(
+                  event['type'] == 'PRIVACY_POLICY' ? '隐私政策' : '健康数据授权',
+                ),
+                subtitle: Text(
+                  '版本 ${event['version']} · ${event['createdAt'] ?? ''}',
+                ),
+                trailing: Text(event['action'] == 'ACCEPT' ? '已同意' : '已撤回'),
+              ),
+            ),
+          ],
           if (_error != null)
             Padding(
               padding: const EdgeInsets.all(12),
@@ -408,9 +462,17 @@ class _PhoneChangePageState extends State<PhoneChangePage> {
 }
 
 class DataRightsPage extends StatefulWidget {
-  const DataRightsPage({required this.api, required this.phone, super.key});
+  const DataRightsPage({
+    required this.api,
+    required this.phone,
+    required this.session,
+    this.savePdf = saveReportPdfToTemporaryDirectory,
+    super.key,
+  });
   final ApiClient api;
   final String phone;
+  final SessionController session;
+  final SaveReportPdf savePdf;
   @override
   State<DataRightsPage> createState() => _DataRightsPageState();
 }
@@ -419,11 +481,50 @@ class _DataRightsPageState extends State<DataRightsPage> {
   final password = TextEditingController();
   String? message;
   bool busy = false;
+  bool loadingExports = true;
+  List<Map<String, dynamic>> exports = const [];
+  final selectedTypes = <String>{'ALL'};
+  DateTime? fromDate;
+  DateTime? toDate;
+
+  static const deletionTypes = {
+    'MEASUREMENTS': '身体测量与计划',
+    'NUTRITION': '饮食记录',
+    'HYDRATION': '饮水记录',
+    'ACTIVITY': '运动记录',
+    'SLEEP': '睡眠记录',
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    _loadExports();
+  }
+
   @override
   void dispose() {
     password.clear();
     password.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadExports() async {
+    try {
+      final value = await widget.api.getDataExports();
+      if (mounted) {
+        setState(() {
+          exports = value;
+          loadingExports = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          message = ApiClient.errorMessage(e);
+          loadingExports = false;
+        });
+      }
+    }
   }
 
   Future<void> _export() async {
@@ -437,7 +538,8 @@ class _DataRightsPageState extends State<DataRightsPage> {
       final code = await askCode(context, '申请数据导出', debug);
       if (code == null) return;
       await widget.api.createDataExport(code: code, password: password.text);
-      if (mounted) setState(() => message = '中文加密 PDF 已生成，可在导出记录中下载');
+      await _loadExports();
+      if (mounted) setState(() => message = '导出申请已提交，生成后可在下方下载');
     } catch (e) {
       if (mounted) setState(() => message = ApiClient.errorMessage(e));
     } finally {
@@ -446,18 +548,67 @@ class _DataRightsPageState extends State<DataRightsPage> {
     }
   }
 
+  Future<void> _download(Map<String, dynamic> item) async {
+    setState(() => busy = true);
+    try {
+      final pdf = await widget.api.downloadDataExportPdf(item['id'].toString());
+      final path = await widget.savePdf(pdf.fileName, pdf.bytes);
+      if (mounted) {
+        final value = '加密 PDF 已保存至：$path';
+        setState(() => message = value);
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(value)));
+      }
+    } catch (e) {
+      if (mounted) setState(() => message = ApiClient.errorMessage(e));
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _pickDate({required bool from}) async {
+    final initial = (from ? fromDate : toDate) ?? DateTime.now();
+    final value = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      helpText: from ? '选择开始日期' : '选择结束日期',
+    );
+    if (value != null && mounted) {
+      setState(() {
+        if (from) {
+          fromDate = value;
+        } else {
+          toDate = value;
+        }
+      });
+    }
+  }
+
   Future<void> _delete() async {
     setState(() => busy = true);
     try {
-      final impact = await widget.api.previewHealthDataDeletion(['ALL']);
+      final types = selectedTypes.toList(growable: false);
+      if (types.isEmpty) throw const FormatException('请至少选择一种健康数据');
+      if (fromDate != null && toDate != null && fromDate!.isAfter(toDate!)) {
+        throw const FormatException('开始日期不能晚于结束日期');
+      }
+      final impact = await widget.api.previewHealthDataDeletion(
+        types,
+        fromDate: fromDate,
+        toDate: toDate,
+      );
       if (!mounted) return;
       final ok =
           await showDialog<bool>(
             context: context,
             builder: (_) => AlertDialog(
-              title: const Text('永久删除全部健康数据？'),
+              title: const Text('查看删除影响'),
               content: Text(
-                '${impact['warning']}\n受影响报告：${impact['affectedReports']} 份。',
+                '${impact['warning']}\n\n记录数量：${_impactCounts(impact['recordCounts'])}'
+                '\n受影响报告：${impact['affectedReports'] ?? 0} 份'
+                '\n受影响计划版本：${impact['affectedPlanVersions'] ?? 0} 个',
               ),
               actions: [
                 TextButton(
@@ -480,7 +631,34 @@ class _DataRightsPageState extends State<DataRightsPage> {
       if (!mounted) return;
       final code = await askCode(context, '确认永久删除', debug);
       if (code == null) return;
-      await widget.api.deleteHealthData(['ALL'], code);
+      if (!mounted) return;
+      final confirmed =
+          await showDialog<bool>(
+            context: context,
+            builder: (_) => AlertDialog(
+              title: const Text('最后确认永久删除'),
+              content: const Text('此操作无法撤销。确认后，所选范围的数据及受影响报告会立即永久删除。'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('返回检查'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('确认永久删除'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+      if (!confirmed) return;
+      await widget.api.deleteHealthData(
+        types,
+        code,
+        fromDate: fromDate,
+        toDate: toDate,
+      );
+      await widget.session.healthDataChanged();
       if (mounted) setState(() => message = '健康数据已永久删除');
     } catch (e) {
       if (mounted) setState(() => message = ApiClient.errorMessage(e));
@@ -498,6 +676,8 @@ class _DataRightsPageState extends State<DataRightsPage> {
         Text('导出个人数据', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 8),
         const Text('导出为中文 PDF，包含账户、健康档案、计划和健康记录，手机号会脱敏。'),
+        const SizedBox(height: 6),
+        const Text('导出文件使用你设置的密码加密，生成后 24 小时内可下载。'),
         const SizedBox(height: 12),
         TextField(
           controller: password,
@@ -509,17 +689,103 @@ class _DataRightsPageState extends State<DataRightsPage> {
           onPressed: busy ? null : _export,
           child: const Text('申请数据导出'),
         ),
+        const SizedBox(height: 16),
+        Text('导出记录', style: Theme.of(context).textTheme.titleMedium),
+        if (loadingExports)
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (exports.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Text('暂无导出记录'),
+          )
+        else
+          ...exports.map(
+            (item) => Card(
+              child: ListTile(
+                title: Text(_exportStatus(item)),
+                subtitle: Text(
+                  '申请时间：${item['createdAt'] ?? '未知'}\n'
+                  '过期时间：${item['expiresAt'] ?? '生成完成后 24 小时'}',
+                ),
+                isThreeLine: true,
+                trailing: _exportDownloadable(item)
+                    ? TextButton(
+                        onPressed: busy ? null : () => _download(item),
+                        child: const Text('下载加密 PDF'),
+                      )
+                    : null,
+              ),
+            ),
+          ),
         const Divider(height: 40),
         Text('删除健康数据', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 8),
-        const Text('删除无法恢复；包含源数据的报告版本会同步删除，无关时间段报告保留。'),
+        const Text('可按类型和时间范围删除；服务端会先计算影响。删除无法恢复，无关时间段报告保留。'),
         const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilterChip(
+              label: const Text('全部健康数据'),
+              selected: selectedTypes.contains('ALL'),
+              onSelected: busy
+                  ? null
+                  : (selected) => setState(() {
+                      selectedTypes
+                        ..clear()
+                        ..addAll(selected ? const ['ALL'] : const []);
+                    }),
+            ),
+            ...deletionTypes.entries.map(
+              (entry) => FilterChip(
+                label: Text(entry.value),
+                selected: selectedTypes.contains(entry.key),
+                onSelected: busy
+                    ? null
+                    : (selected) => setState(() {
+                        selectedTypes.remove('ALL');
+                        selected
+                            ? selectedTypes.add(entry.key)
+                            : selectedTypes.remove(entry.key);
+                      }),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton(
+              onPressed: busy ? null : () => _pickDate(from: true),
+              child: Text('开始：${_dateLabel(fromDate)}'),
+            ),
+            OutlinedButton(
+              onPressed: busy ? null : () => _pickDate(from: false),
+              child: Text('结束：${_dateLabel(toDate)}'),
+            ),
+            TextButton(
+              onPressed: busy
+                  ? null
+                  : () => setState(() {
+                      fromDate = null;
+                      toDate = null;
+                    }),
+              child: const Text('不限时间'),
+            ),
+          ],
+        ),
         OutlinedButton(
           onPressed: busy ? null : _delete,
           style: OutlinedButton.styleFrom(
             foregroundColor: Theme.of(context).colorScheme.error,
           ),
-          child: const Text('永久删除全部健康数据'),
+          child: const Text('预览影响并永久删除'),
         ),
         if (message != null)
           Padding(
@@ -529,6 +795,33 @@ class _DataRightsPageState extends State<DataRightsPage> {
       ],
     ),
   );
+}
+
+String _dateLabel(DateTime? value) => value == null
+    ? '不限'
+    : '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+
+String _exportStatus(Map<String, dynamic> item) => switch (item['status']) {
+  'PENDING' || 'PROCESSING' => '生成中',
+  'READY' when _exportExpired(item) => '已过期',
+  'READY' => '可下载',
+  'FAILED' => '生成失败',
+  _ => '状态未知',
+};
+
+bool _exportDownloadable(Map<String, dynamic> item) =>
+    item['status'] == 'READY' && !_exportExpired(item);
+
+bool _exportExpired(Map<String, dynamic> item) {
+  final expiresAt = DateTime.tryParse(item['expiresAt']?.toString() ?? '');
+  return expiresAt != null && !expiresAt.isAfter(DateTime.now().toUtc());
+}
+
+String _impactCounts(Object? value) {
+  if (value is! Map || value.isEmpty) return '0 条';
+  return value.entries
+      .map((entry) => '${entry.key} ${entry.value} 条')
+      .join('、');
 }
 
 class AccountDeletionPage extends StatefulWidget {

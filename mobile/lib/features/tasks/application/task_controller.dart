@@ -71,6 +71,18 @@ class TaskController extends ChangeNotifier {
   String _storageKey(DateTime date) =>
       'task_day_${accountKey}_${formatLocalDate(date)}';
 
+  static Future<void> clearAccountCache(String accountKey) async {
+    final preferences = await SharedPreferences.getInstance();
+    final prefix = 'task_day_${accountKey}_';
+    for (final key
+        in preferences
+            .getKeys()
+            .where((key) => key.startsWith(prefix))
+            .toList()) {
+      await preferences.remove(key);
+    }
+  }
+
   List<TaskInstance> get visibleTasks {
     final tasks = state.day?.allTasks ?? const <TaskInstance>[];
     return state.filter == null

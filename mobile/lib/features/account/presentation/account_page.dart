@@ -26,6 +26,10 @@ class _AccountPageState extends State<AccountPage> {
   Future<void> _load() async {
     try {
       final value = await widget.session.api.getAccount();
+      final authorized = value['healthAuthorized'] != false;
+      if (widget.session.healthAuthorized != authorized) {
+        await widget.session.healthDataChanged(healthAuthorized: authorized);
+      }
       if (mounted) {
         setState(() {
           account = value;
@@ -38,9 +42,8 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _open(Widget page) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => page),
-    );
+    await Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => page));
     if (mounted) await _load();
   }
 
@@ -162,7 +165,12 @@ class _AccountPageState extends State<AccountPage> {
                 subtitle: account!['healthAuthorized'] == true
                     ? '健康数据已授权'
                     : '健康数据授权未开启',
-                onTap: () => _open(PrivacyCenterPage(api: widget.session.api)),
+                onTap: () => _open(
+                  PrivacyCenterPage(
+                    api: widget.session.api,
+                    session: widget.session,
+                  ),
+                ),
               ),
             ],
           ),
@@ -175,7 +183,11 @@ class _AccountPageState extends State<AccountPage> {
                 title: '导出与删除数据',
                 subtitle: '导出中文 PDF 或永久删除健康数据',
                 onTap: () => _open(
-                  DataRightsPage(api: widget.session.api, phone: phone),
+                  DataRightsPage(
+                    api: widget.session.api,
+                    phone: phone,
+                    session: widget.session,
+                  ),
                 ),
               ),
             ],

@@ -4,10 +4,15 @@ import 'package:healthy/core/api/api_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeApiClient extends ApiClient {
-  _FakeApiClient({this.restored, this.currentStep = 0});
+  _FakeApiClient({
+    this.restored,
+    this.currentStep = 0,
+    this.failLogout = false,
+  });
 
   final LoginResult? restored;
   final int currentStep;
+  final bool failLogout;
   bool loggedOut = false;
 
   @override
@@ -20,7 +25,10 @@ class _FakeApiClient extends ApiClient {
   };
 
   @override
-  Future<void> logout({bool allDevices = false}) async => loggedOut = true;
+  Future<void> logout({bool allDevices = false}) async {
+    loggedOut = true;
+    if (failLogout) throw StateError('会话已撤销');
+  }
 }
 
 void main() {
@@ -105,6 +113,46 @@ void main() {
     expect(api.loggedOut, isTrue);
     expect(session.stage, AppStage.home);
     expect(session.access, UserAccess.guest);
+  });
+
+  test('服务端会话已撤销时仍完成本地退出', () async {
+    final session = SessionController(
+      _FakeApiClient(failLogout: true),
+      onHealthDataCleared: () async {},
+    );
+    await session.acceptLogin(
+      const LoginResult(profileComplete: true, phone: '13800138000'),
+    );
+
+    await session.logout();
+
+    expect(session.stage, AppStage.home);
+    expect(session.access, UserAccess.guest);
+  });
+
+  test('健康数据变化和注销申请都会立即触发本地健康状态清理', () async {
+    var cleared = 0;
+    final api = _FakeApiClient();
+    final session = SessionController(
+      api,
+      onHealthDataCleared: () async => cleared++,
+    );
+    await session.acceptLogin(
+      const LoginResult(profileComplete: true, phone: '13800138000'),
+    );
+    final revision = session.sessionRevision;
+
+    await session.healthDataChanged(healthAuthorized: false);
+
+    expect(cleared, 1);
+    expect(session.healthAuthorized, isFalse);
+    expect(session.sessionRevision, revision + 1);
+
+    await session.accountDeletionRequested();
+
+    expect(cleared, 2);
+    expect(session.accountKey, 'guest');
+    expect(session.phone, isNull);
   });
 
   test('直接完成健康档案后进入计划预览', () {
