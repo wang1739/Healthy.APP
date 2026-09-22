@@ -53,12 +53,21 @@ public class PlanController {
     }
 
     @PostMapping("/{id}/recalculate")
-    PlanDtos.CurrentResponse recalculate(
+    PlanDtos.RecalculationPreviewResponse recalculate(
             Authentication authentication,
             @PathVariable String id,
             @Valid @RequestBody PlanDtos.RecalculateRequest request
     ) {
         return service.recalculate(authentication.getName(), id, request);
+    }
+
+    @PostMapping("/{id}/recalculation/confirm")
+    PlanDtos.CurrentResponse confirmRecalculation(
+            Authentication authentication,
+            @PathVariable String id,
+            @Valid @RequestBody PlanDtos.ConfirmRecalculationRequest request
+    ) {
+        return service.confirmRecalculation(authentication.getName(), id, request);
     }
 
     @PutMapping("/{id}/targets")

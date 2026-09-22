@@ -11,6 +11,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -55,7 +56,7 @@ public class PlanService {
                 (id,user_id,status,phase_start_date,phase_end_date,current_version,created_at,updated_at)
                 VALUES (?,?,'ACTIVE',?,?,1,?,?)
                 """, planId, userId, today, today.plusDays(27), Timestamp.from(now), Timestamp.from(now));
-        insertVersion(planId, 1, profile, result, request == null ? null : request.reason());
+        insertVersion(planId, 1, "ACTIVE", profile, result, request == null ? null : request.reason());
         jdbc.update("UPDATE health_profiles SET plan_needs_recalculation=FALSE WHERE user_id=?", userId);
         return current(userId);
     }
@@ -90,7 +91,8 @@ public class PlanService {
         return jdbc.query("""
                 SELECT version_number,rule_version,profile_version,calculation_date,target_kcal,water_ml,
                        exercise_days,exercise_minutes,sleep_hours,adjustment_reason,created_at
-                FROM health_plan_versions WHERE plan_id=? ORDER BY version_number DESC LIMIT ?
+                FROM health_plan_versions WHERE plan_id=? AND status <> 'PREVIEW'
+                ORDER BY version_number DESC LIMIT ?
                 """, (rs, row) -> new PlanDtos.HistoryResponse(
                 rs.getInt("version_number"), rs.getString("rule_version"), rs.getInt("profile_version"),
                 rs.getObject("calculation_date", LocalDate.class), rs.getInt("target_kcal"),
@@ -129,14 +131,16 @@ public class PlanService {
         PlanPolicy.ProfileSnapshot profile = snapshot(userId);
         PlanCalculator.Result result = calculate(profile, adjustments);
         int nextVersion = request.expectedVersion() + 1;
+        jdbc.update("DELETE FROM health_plan_versions WHERE plan_id=? AND status='PREVIEW'", planId);
         optimisticVersionUpdate(userId, planId, request.expectedVersion(), nextVersion, null);
-        insertVersion(planId, nextVersion, profile, result,
+        jdbc.update("UPDATE health_plan_versions SET status='HISTORY' WHERE plan_id=? AND status='ACTIVE'", planId);
+        insertVersion(planId, nextVersion, "ACTIVE", profile, result,
                 request.reason() == null || request.reason().isBlank() ? "用户调整目标" : request.reason());
         return current(userId);
     }
 
     @Transactional
-    public PlanDtos.CurrentResponse recalculate(
+    public PlanDtos.RecalculationPreviewResponse recalculate(
             String userId, String planId, PlanDtos.RecalculateRequest request
     ) {
         Map<String, Object> plan = ownedPlan(userId, planId, true);
@@ -145,9 +149,44 @@ public class PlanService {
         PlanPolicy.ProfileSnapshot profile = snapshot(userId);
         PlanCalculator.Result result = calculate(profile, null);
         int nextVersion = request.expectedVersion() + 1;
+        jdbc.update("DELETE FROM health_plan_versions WHERE plan_id=? AND status='PREVIEW'", planId);
+        String previewId;
+        try {
+            previewId = insertVersion(planId, nextVersion, "PREVIEW", profile, result, "健康档案变化后重新计算");
+        } catch (DataIntegrityViolationException exception) {
+            throw conflict("PLAN_PREVIEW_CONFLICT", "计划预览已更新，请刷新后重试");
+        }
+        return new PlanDtos.RecalculationPreviewResponse(
+                "PREVIEW", planId, request.expectedVersion(), nextVersion, previewId,
+                PlanDtos.PlanResultResponse.from(result));
+    }
+
+    @Transactional
+    public PlanDtos.CurrentResponse confirmRecalculation(
+            String userId, String planId, PlanDtos.ConfirmRecalculationRequest request
+    ) {
+        Map<String, Object> plan = ownedPlan(userId, planId, true);
+        requireActive(plan);
+        requireVersion(plan, request.expectedVersion());
+        List<Map<String, Object>> previews = jdbc.queryForList("""
+                SELECT * FROM health_plan_versions
+                WHERE id=? AND plan_id=? AND status='PREVIEW'
+                """, request.previewId(), planId);
+        if (previews.isEmpty() || number(previews.get(0), "version_number") != request.expectedVersion() + 1) {
+            throw conflict("PLAN_PREVIEW_CONFLICT", "计划预览已更新，请刷新后重试");
+        }
+        int nextVersion = request.expectedVersion() + 1;
         LocalDate today = LocalDate.now();
         optimisticVersionUpdate(userId, planId, request.expectedVersion(), nextVersion, today);
-        insertVersion(planId, nextVersion, profile, result, "健康档案变化后重新计算");
+        jdbc.update("UPDATE health_plan_versions SET status='HISTORY' WHERE plan_id=? AND status='ACTIVE'", planId);
+        int activated = jdbc.update("""
+                UPDATE health_plan_versions SET status='ACTIVE'
+                WHERE id=? AND plan_id=? AND status='PREVIEW'
+                """, request.previewId(), planId);
+        if (activated == 0) {
+            throw conflict("PLAN_PREVIEW_CONFLICT", "计划预览已更新，请刷新后重试");
+        }
+        jdbc.update("DELETE FROM health_plan_versions WHERE plan_id=? AND status='PREVIEW'", planId);
         jdbc.update("UPDATE health_profiles SET plan_needs_recalculation=FALSE WHERE user_id=?", userId);
         return current(userId);
     }
@@ -187,7 +226,7 @@ public class PlanService {
             row = jdbc.queryForMap("""
                     SELECT hp.completed,hp.risk_blocked,hp.birth_date,hp.sex,hp.metabolic_basis,
                            hp.height_cm,hp.activity_level,hp.sleep_hours,hp.exercise_days,hp.version,
-                           hg.goal_type,hg.target_weight_kg,hg.target_date,bm.weight_kg
+                           hg.goal_type,hg.target_weight_kg,hg.target_date,bm.id AS measurement_id,bm.weight_kg
                     FROM health_profiles hp
                     JOIN health_goals hg ON hg.user_id=hp.user_id
                     JOIN body_measurements bm ON bm.id=(
@@ -211,7 +250,7 @@ public class PlanService {
                 sex, basis, decimal(row, "height_cm"), decimal(row, "weight_kg"),
                 string(row, "activity_level"), decimal(row, "sleep_hours"), number(row, "exercise_days"),
                 string(row, "goal_type"), decimal(row, "target_weight_kg"), date(row, "target_date"),
-                number(row, "version"));
+                number(row, "version"), string(row, "measurement_id"));
         policy.validateProfile(profile);
         return profile;
     }
@@ -225,24 +264,27 @@ public class PlanService {
                 profile.exerciseDays(), LocalDate.now(), adjustments));
     }
 
-    private void insertVersion(
-            String planId, int versionNumber, PlanPolicy.ProfileSnapshot profile,
+    private String insertVersion(
+            String planId, int versionNumber, String status, PlanPolicy.ProfileSnapshot profile,
             PlanCalculator.Result result, String reason
     ) {
+        String versionId = UUID.randomUUID().toString();
         jdbc.update("""
                 INSERT INTO health_plan_versions
-                (id,plan_id,version_number,rule_version,profile_version,calculation_date,age,metabolic_basis,
+                (id,plan_id,version_number,status,rule_version,profile_version,calculation_date,age,metabolic_basis,
                  height_cm,weight_kg,activity_level,target_weight_kg,requested_target_date,bmi,bmr_kcal,
                  tdee_kcal,target_kcal,protein_g,carbs_g,fat_g,water_ml,exercise_days,exercise_minutes,
-                 sleep_hours,expected_weekly_change_kg,suggested_target_date,safety_message,adjustment_reason)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """, UUID.randomUUID().toString(), planId, versionNumber, result.ruleVersion(),
+                 sleep_hours,expected_weekly_change_kg,suggested_target_date,safety_message,adjustment_reason,
+                 source_measurement_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """, versionId, planId, versionNumber, status, result.ruleVersion(),
                 profile.profileVersion(), LocalDate.now(), profile.age(), profile.metabolicBasis(),
                 profile.heightCm(), profile.weightKg(), profile.activityLevel(), profile.targetWeightKg(),
                 profile.targetDate(), result.bmi(), result.bmrKcal(), result.tdeeKcal(), result.targetKcal(),
                 result.proteinG(), result.carbsG(), result.fatG(), result.waterMl(), result.exerciseDays(),
                 result.exerciseMinutes(), result.sleepHours(), result.expectedWeeklyChangeKg(),
-                result.suggestedTargetDate(), result.safetyMessage(), blankToNull(reason));
+                result.suggestedTargetDate(), result.safetyMessage(), blankToNull(reason), profile.measurementId());
+        return versionId;
     }
 
     private void optimisticVersionUpdate(

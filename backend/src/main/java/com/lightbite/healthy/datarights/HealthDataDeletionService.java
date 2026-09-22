@@ -100,9 +100,12 @@ public class HealthDataDeletionService {
     }
 
     private void repairPlan(String userId, String planId) {
-        Integer latest = jdbc.queryForObject("SELECT MAX(version_number) FROM health_plan_versions WHERE plan_id=?",
+        Integer latest = jdbc.queryForObject("SELECT MAX(version_number) FROM health_plan_versions "
+                        + "WHERE plan_id=? AND status <> 'PREVIEW'",
                 Integer.class, planId);
         if (latest != null) {
+            jdbc.update("UPDATE health_plan_versions SET status=CASE WHEN version_number=? THEN 'ACTIVE' "
+                    + "ELSE 'HISTORY' END WHERE plan_id=? AND status <> 'PREVIEW'", latest, planId);
             jdbc.update("UPDATE health_plans SET current_version=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",
                     latest, planId, userId);
             return;

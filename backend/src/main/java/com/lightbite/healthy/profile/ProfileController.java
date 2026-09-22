@@ -2,7 +2,6 @@ package com.lightbite.healthy.profile;
 
 import jakarta.validation.Valid;
 import java.util.List;
-import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,8 +23,51 @@ public class ProfileController {
     }
 
     @GetMapping
-    Map<String, Object> profile(Authentication authentication) {
-        return profileService.profile(authentication.getName());
+    ProfileDtos.ProfileSectionsResponse profile(Authentication authentication) {
+        return profileService.sections(authentication.getName());
+    }
+
+    @GetMapping("/sections")
+    ProfileDtos.ProfileSectionsResponse sections(Authentication authentication) {
+        return profileService.sections(authentication.getName());
+    }
+
+    @PutMapping("/sections/basic-info")
+    ProfileDtos.ProfileSectionsResponse saveBasicInfo(Authentication authentication,
+            @Valid @RequestBody ProfileDtos.BasicInfoRequest request) {
+        return profileService.saveBasicInfo(authentication.getName(), request);
+    }
+
+    @PutMapping("/sections/body-data")
+    ProfileDtos.ProfileSectionsResponse saveBodyData(Authentication authentication,
+            @Valid @RequestBody ProfileDtos.BodyDataRequest request) {
+        return profileService.saveBodyData(authentication.getName(), request);
+    }
+
+    @PutMapping("/sections/lifestyle")
+    ProfileDtos.ProfileSectionsResponse saveLifestyle(Authentication authentication,
+            @Valid @RequestBody ProfileDtos.LifestyleRequest request) {
+        return profileService.saveLifestyle(authentication.getName(), request);
+    }
+
+    @PutMapping("/sections/dietary-preferences")
+    ProfileDtos.ProfileSectionsResponse saveDietaryPreferences(Authentication authentication,
+            @Valid @RequestBody ProfileDtos.PreferencesRequest request) {
+        profileService.savePreferences(authentication.getName(), request);
+        return profileService.sections(authentication.getName());
+    }
+
+    @PutMapping("/sections/health-goal")
+    ProfileDtos.ProfileSectionsResponse saveHealthGoal(Authentication authentication,
+            @Valid @RequestBody ProfileDtos.HealthGoalRequest request) {
+        return profileService.saveHealthGoal(authentication.getName(), request);
+    }
+
+    @PutMapping("/sections/risk-info")
+    ProfileDtos.ProfileSectionsResponse saveRiskInfo(Authentication authentication,
+            @Valid @RequestBody ProfileDtos.RiskRequest request) {
+        profileService.saveRisk(authentication.getName(), request);
+        return profileService.sections(authentication.getName());
     }
 
     @PutMapping

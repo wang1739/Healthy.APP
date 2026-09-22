@@ -119,6 +119,7 @@ public class ProfileService {
         }
         if (wasComplete && keyDataChanged) {
             jdbc.update("UPDATE health_profiles SET plan_needs_recalculation = TRUE WHERE user_id = ?", userId);
+            invalidatePlanPreviews(userId);
         }
         if (Boolean.TRUE.equals(request.completed())) {
             validateComplete(userId);
@@ -141,6 +142,12 @@ public class ProfileService {
         ensureProfile(userId);
         boolean wasComplete = Boolean.TRUE.equals(jdbc.queryForObject(
                 "SELECT completed FROM health_profiles WHERE user_id = ?", Boolean.class, userId));
+        List<BigDecimal> priorWeights = jdbc.query("""
+                SELECT weight_kg FROM body_measurements WHERE user_id = ?
+                ORDER BY measured_at DESC, id DESC LIMIT 1
+                """, (resultSet, rowNum) -> resultSet.getBigDecimal("weight_kg"), userId);
+        boolean weightChanged = priorWeights.isEmpty()
+                || priorWeights.get(0).compareTo(request.weightKg()) != 0;
         String id = UUID.randomUUID().toString();
         Instant now = Instant.now();
         jdbc.update("""
@@ -149,12 +156,13 @@ public class ProfileService {
                 VALUES (?, ?, ?, ?, ?, ?)
                 """, id, userId, request.weightKg(), request.waistCm(), request.bodyFatPercent(), Timestamp.from(now));
         jdbc.update("UPDATE health_profiles SET current_step = CASE WHEN current_step < 2 THEN 2 ELSE current_step END WHERE user_id = ?", userId);
-        if (wasComplete) {
+        if (wasComplete && weightChanged) {
             jdbc.update("""
                     UPDATE health_profiles
                     SET plan_needs_recalculation = TRUE, version = version + 1, updated_at = ?
                     WHERE user_id = ?
                     """, Timestamp.from(Instant.now()), userId);
+            invalidatePlanPreviews(userId);
         }
         return new ProfileDtos.MeasurementResponse(
                 id, request.weightKg(), request.waistCm(), request.bodyFatPercent(), now);
@@ -183,8 +191,6 @@ public class ProfileService {
     @Transactional
     public ProfileDtos.RiskResponse saveRisk(String userId, ProfileDtos.RiskRequest request) {
         ensureProfile(userId);
-        Map<String, Object> profile = jdbc.queryForMap(
-                "SELECT completed, risk_blocked FROM health_profiles WHERE user_id = ?", userId);
         LocalDate birthDate = jdbc.queryForObject(
                 "SELECT birth_date FROM health_profiles WHERE user_id = ?", LocalDate.class, userId);
         boolean minor = birthDate != null && Period.between(birthDate, LocalDate.now()).getYears() < 18;
@@ -198,14 +204,6 @@ public class ProfileService {
                 """, UUID.randomUUID().toString(), userId, request.pregnant(), request.breastfeeding(),
                 request.eatingDisorderRisk(), request.seriousChronicDisease(), request.unsafeTarget(), blocked);
         jdbc.update("UPDATE health_profiles SET risk_blocked = ?, current_step = 6 WHERE user_id = ?", blocked, userId);
-        if (Boolean.TRUE.equals(profile.get("completed"))
-                && blocked != Boolean.TRUE.equals(profile.get("risk_blocked"))) {
-            jdbc.update("""
-                    UPDATE health_profiles
-                    SET plan_needs_recalculation = TRUE, version = version + 1, updated_at = ?
-                    WHERE user_id = ?
-                    """, Timestamp.from(Instant.now()), userId);
-        }
         return new ProfileDtos.RiskResponse(
                 blocked,
                 blocked ? "当前情况不适合自动生成普通减脂计划，请咨询医生或注册营养师" : "未发现自动计划拦截项"
@@ -238,9 +236,85 @@ public class ProfileService {
         );
     }
 
-    public Map<String, Object> profile(String userId) {
+    @Transactional
+    public ProfileDtos.ProfileSectionsResponse saveBasicInfo(String userId, ProfileDtos.BasicInfoRequest request) {
+        saveProfile(userId, new ProfileDtos.ProfileRequest(request.birthDate(), request.sex(),
+                request.metabolicBasis(), null, null, null, null, null, null, null, null, null, null));
+        return sections(userId);
+    }
+
+    @Transactional
+    public ProfileDtos.ProfileSectionsResponse saveBodyData(String userId, ProfileDtos.BodyDataRequest request) {
+        if (request.heightCm() != null) {
+            saveProfile(userId, new ProfileDtos.ProfileRequest(null, null, null, request.heightCm(),
+                    null, null, null, null, null, null, null, null, null));
+        }
+        if (request.weightKg() != null || request.waistCm() != null || request.bodyFatPercent() != null) {
+            BigDecimal weight = request.weightKg();
+            if (weight == null) {
+                List<BigDecimal> weights = jdbc.query("""
+                        SELECT weight_kg FROM body_measurements WHERE user_id = ?
+                        ORDER BY measured_at DESC, id DESC LIMIT 1
+                        """, (resultSet, rowNum) -> resultSet.getBigDecimal("weight_kg"), userId);
+                weight = weights.isEmpty() ? null : weights.get(0);
+            }
+            addMeasurement(userId, new ProfileDtos.MeasurementRequest(
+                    weight, request.waistCm(), request.bodyFatPercent()));
+        }
+        return sections(userId);
+    }
+
+    @Transactional
+    public ProfileDtos.ProfileSectionsResponse saveLifestyle(String userId, ProfileDtos.LifestyleRequest request) {
+        saveProfile(userId, new ProfileDtos.ProfileRequest(null, null, null, null, request.activityLevel(),
+                request.workStyle(), request.sleepHours(), request.exerciseDays(), null, null, null, null, null));
+        return sections(userId);
+    }
+
+    @Transactional
+    public ProfileDtos.ProfileSectionsResponse saveHealthGoal(String userId, ProfileDtos.HealthGoalRequest request) {
+        saveProfile(userId, new ProfileDtos.ProfileRequest(null, null, null, null, null, null, null, null,
+                request.goalType(), request.targetWeightKg(), request.targetDate(), null, null));
+        return sections(userId);
+    }
+
+    public ProfileDtos.ProfileSectionsResponse sections(String userId) {
         ensureProfile(userId);
-        return jdbc.queryForMap("SELECT * FROM health_profiles WHERE user_id = ?", userId);
+        Map<String, Object> profile = jdbc.queryForMap("SELECT * FROM health_profiles WHERE user_id = ?", userId);
+        List<ProfileDtos.MeasurementResponse> measurements = jdbc.query("""
+                SELECT id, weight_kg, waist_cm, body_fat_percent, measured_at
+                FROM body_measurements WHERE user_id = ? ORDER BY measured_at DESC, id DESC LIMIT 1
+                """, (resultSet, rowNum) -> measurement(resultSet), userId);
+        List<Map<String, Object>> preferences = jdbc.queryForList(
+                "SELECT diet_type, allergies, avoid_foods FROM dietary_preferences WHERE user_id = ?", userId);
+        List<Map<String, Object>> goals = jdbc.queryForList(
+                "SELECT goal_type, target_weight_kg, target_date FROM health_goals WHERE user_id = ?", userId);
+        List<Map<String, Object>> risks = jdbc.queryForList("""
+                SELECT pregnant, breastfeeding, eating_disorder_risk, serious_chronic_disease,
+                       unsafe_target, risk_blocked
+                FROM health_risk_answers WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT 1
+                """, userId);
+        Map<String, Object> preference = preferences.isEmpty() ? Map.of() : preferences.get(0);
+        Map<String, Object> goal = goals.isEmpty() ? Map.of() : goals.get(0);
+        Map<String, Object> risk = risks.isEmpty() ? Map.of() : risks.get(0);
+        return new ProfileDtos.ProfileSectionsResponse(
+                new ProfileDtos.BasicInfoResponse(toLocalDate(profile.get("birth_date")),
+                        (String) profile.get("sex"), (String) profile.get("metabolic_basis")),
+                new ProfileDtos.BodyDataResponse((BigDecimal) profile.get("height_cm"),
+                        measurements.isEmpty() ? null : measurements.get(0)),
+                new ProfileDtos.LifestyleResponse((String) profile.get("activity_level"),
+                        (String) profile.get("work_style"), (BigDecimal) profile.get("sleep_hours"),
+                        numberAsInteger(profile.get("exercise_days"))),
+                new ProfileDtos.DietaryPreferencesResponse((String) preference.get("diet_type"),
+                        (String) preference.get("allergies"), (String) preference.get("avoid_foods")),
+                new ProfileDtos.HealthGoalResponse((String) goal.get("goal_type"),
+                        (BigDecimal) goal.get("target_weight_kg"), toLocalDate(goal.get("target_date"))),
+                new ProfileDtos.RiskInfoResponse(bool(risk.get("pregnant")), bool(risk.get("breastfeeding")),
+                        bool(risk.get("eating_disorder_risk")), bool(risk.get("serious_chronic_disease")),
+                        bool(risk.get("unsafe_target")), Boolean.TRUE.equals(profile.get("risk_blocked"))),
+                Boolean.TRUE.equals(profile.get("completed")) && profile.get("metabolic_basis") != null,
+                Boolean.TRUE.equals(profile.get("plan_needs_recalculation")),
+                ((Number) profile.get("version")).longValue());
     }
 
     private void ensureProfile(String userId) {
@@ -306,6 +380,21 @@ public class ProfileService {
             return null;
         }
         return value instanceof LocalDate date ? date : ((java.sql.Date) value).toLocalDate();
+    }
+
+    private void invalidatePlanPreviews(String userId) {
+        jdbc.update("""
+                DELETE FROM health_plan_versions
+                WHERE status='PREVIEW' AND plan_id IN (SELECT id FROM health_plans WHERE user_id=? )
+                """, userId);
+    }
+
+    private Integer numberAsInteger(Object value) {
+        return value == null ? null : ((Number) value).intValue();
+    }
+
+    private boolean bool(Object value) {
+        return Boolean.TRUE.equals(value);
     }
 
     private ApiException invalid(String field, String message) {
