@@ -187,7 +187,7 @@ public class PlanService {
             row = jdbc.queryForMap("""
                     SELECT hp.completed,hp.risk_blocked,hp.birth_date,hp.sex,hp.metabolic_basis,
                            hp.height_cm,hp.activity_level,hp.sleep_hours,hp.exercise_days,hp.version,
-                           hg.goal_type,hg.target_weight_kg,hg.target_date,bm.weight_kg
+                           hg.goal_type,hg.target_weight_kg,hg.target_date,bm.id AS measurement_id,bm.weight_kg
                     FROM health_profiles hp
                     JOIN health_goals hg ON hg.user_id=hp.user_id
                     JOIN body_measurements bm ON bm.id=(
@@ -211,7 +211,7 @@ public class PlanService {
                 sex, basis, decimal(row, "height_cm"), decimal(row, "weight_kg"),
                 string(row, "activity_level"), decimal(row, "sleep_hours"), number(row, "exercise_days"),
                 string(row, "goal_type"), decimal(row, "target_weight_kg"), date(row, "target_date"),
-                number(row, "version"));
+                number(row, "version"), string(row, "measurement_id"));
         policy.validateProfile(profile);
         return profile;
     }
@@ -234,15 +234,16 @@ public class PlanService {
                 (id,plan_id,version_number,rule_version,profile_version,calculation_date,age,metabolic_basis,
                  height_cm,weight_kg,activity_level,target_weight_kg,requested_target_date,bmi,bmr_kcal,
                  tdee_kcal,target_kcal,protein_g,carbs_g,fat_g,water_ml,exercise_days,exercise_minutes,
-                 sleep_hours,expected_weekly_change_kg,suggested_target_date,safety_message,adjustment_reason)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 sleep_hours,expected_weekly_change_kg,suggested_target_date,safety_message,adjustment_reason,
+                 source_measurement_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """, UUID.randomUUID().toString(), planId, versionNumber, result.ruleVersion(),
                 profile.profileVersion(), LocalDate.now(), profile.age(), profile.metabolicBasis(),
                 profile.heightCm(), profile.weightKg(), profile.activityLevel(), profile.targetWeightKg(),
                 profile.targetDate(), result.bmi(), result.bmrKcal(), result.tdeeKcal(), result.targetKcal(),
                 result.proteinG(), result.carbsG(), result.fatG(), result.waterMl(), result.exerciseDays(),
                 result.exerciseMinutes(), result.sleepHours(), result.expectedWeeklyChangeKg(),
-                result.suggestedTargetDate(), result.safetyMessage(), blankToNull(reason));
+                result.suggestedTargetDate(), result.safetyMessage(), blankToNull(reason), profile.sourceMeasurementId());
     }
 
     private void optimisticVersionUpdate(

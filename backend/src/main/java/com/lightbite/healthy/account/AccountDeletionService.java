@@ -2,6 +2,7 @@ package com.lightbite.healthy.account;
 
 import com.lightbite.healthy.auth.AuthService;
 import com.lightbite.healthy.common.api.ApiException;
+import com.lightbite.healthy.datarights.DataExportService;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
@@ -19,14 +20,15 @@ public class AccountDeletionService {
     private final JdbcTemplate jdbc;
     private final AuthService auth;
     private final SecurityEventService events;
+    private final DataExportService exports;
     private final Clock clock;
     @Autowired
-    public AccountDeletionService(JdbcTemplate jdbc, AuthService auth, SecurityEventService events) {
-        this(jdbc, auth, events, Clock.systemUTC());
+    public AccountDeletionService(JdbcTemplate jdbc, AuthService auth, SecurityEventService events, DataExportService exports) {
+        this(jdbc, auth, events, exports, Clock.systemUTC());
     }
 
-    AccountDeletionService(JdbcTemplate jdbc, AuthService auth, SecurityEventService events, Clock clock) {
-        this.jdbc = jdbc; this.auth = auth; this.events = events; this.clock = clock;
+    AccountDeletionService(JdbcTemplate jdbc, AuthService auth, SecurityEventService events, DataExportService exports, Clock clock) {
+        this.jdbc = jdbc; this.auth = auth; this.events = events; this.exports = exports; this.clock = clock;
     }
 
     @Transactional
@@ -42,6 +44,7 @@ public class AccountDeletionService {
                 Timestamp.from(now), Timestamp.from(scheduled));
         jdbc.update("UPDATE users SET status='DELETION_PENDING',updated_at=? WHERE id=?",
                 Timestamp.from(now), userId);
+        exports.deleteFiles(userId);
         jdbc.update("UPDATE data_export_jobs SET status='CANCELLED',file_path=NULL,expires_at=NULL "
                 + "WHERE user_id=? AND status IN ('PENDING','PROCESSING','READY')", userId);
         events.record(userId, "申请注销账户", null, null, "成功");

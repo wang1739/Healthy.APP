@@ -5,6 +5,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import com.lightbite.healthy.datarights.DataExportService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -15,14 +16,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class AccountDeletionCleanup {
     private final JdbcTemplate jdbc;
     private final Clock clock;
+    private final DataExportService exports;
 
     @Autowired
-    public AccountDeletionCleanup(JdbcTemplate jdbc) {
-        this(jdbc, Clock.systemUTC());
+    public AccountDeletionCleanup(JdbcTemplate jdbc, DataExportService exports) {
+        this(jdbc, exports, Clock.systemUTC());
     }
 
-    AccountDeletionCleanup(JdbcTemplate jdbc, Clock clock) {
+    AccountDeletionCleanup(JdbcTemplate jdbc, DataExportService exports, Clock clock) {
         this.jdbc = jdbc;
+        this.exports = exports;
         this.clock = clock;
     }
 
@@ -63,6 +66,7 @@ public class AccountDeletionCleanup {
         delete("DELETE FROM health_risk_answers WHERE user_id=?", userId);
         delete("DELETE FROM health_permissions WHERE user_id=?", userId);
         delete("DELETE FROM health_profiles WHERE user_id=?", userId);
+        exports.deleteFiles(userId);
         delete("DELETE FROM data_export_jobs WHERE user_id=?", userId);
         delete("DELETE FROM health_data_deletion_jobs WHERE user_id=?", userId);
         delete("DELETE FROM phone_change_appeals WHERE user_id=?", userId);

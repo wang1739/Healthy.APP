@@ -37,6 +37,8 @@ class PrivacyIntegrationTests {
 
     @Test
     void healthAuthorizationIsIndependentAndCanBeWithdrawnAndAcceptedAgain() throws Exception {
+        mockMvc.perform(get("/api/v1/activity/types").with(user(USER)))
+                .andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/privacy").with(user(USER)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.healthAuthorized").value(false))
                 .andExpect(jsonPath("$.latestDocuments.length()").value(2));
@@ -58,7 +60,12 @@ class PrivacyIntegrationTests {
         mockMvc.perform(get("/api/v1/profile/completeness").with(user(USER)))
                 .andExpect(status().isLocked())
                 .andExpect(jsonPath("$.message").value("健康数据授权已撤回，请重新同意后使用此功能"));
+        mockMvc.perform(get("/api/v1/activity/types").with(user(USER)))
+                .andExpect(status().isLocked())
+                .andExpect(jsonPath("$.code").value("HEALTH_AUTHORIZATION_WITHDRAWN"));
         mockMvc.perform(get("/api/v1/account").with(user(USER)))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/v1/data-exports").with(user(USER)))
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/v1/privacy/consents").with(user(USER))

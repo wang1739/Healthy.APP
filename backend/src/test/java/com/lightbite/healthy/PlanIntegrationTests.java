@@ -18,6 +18,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
+import com.jayway.jsonpath.JsonPath;
+import java.time.LocalDate;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -35,6 +37,10 @@ class PlanIntegrationTests {
         mockMvc = MockMvcBuilders.webAppContextSetup(applicationContext).apply(springSecurity()).build();
         jdbc.update("DELETE FROM health_plan_versions");
         jdbc.update("DELETE FROM health_plans");
+        jdbc.update("DELETE FROM health_report_sources WHERE report_id IN ('measurement-report','unrelated-measurement-report')");
+        jdbc.update("DELETE FROM health_reports WHERE id IN ('measurement-report','unrelated-measurement-report')");
+        jdbc.update("DELETE FROM health_data_deletion_jobs WHERE user_id IN (?,?)", USER_A, USER_B);
+        jdbc.update("DELETE FROM verification_codes WHERE phone IN ('13800000001','13800000002')");
         createCompleteProfile(USER_A, "13800000001");
         createCompleteProfile(USER_B, "13800000002");
     }
@@ -56,6 +62,13 @@ class PlanIntegrationTests {
                 .andExpect(jsonPath("$.currentVersion").value(1))
                 .andExpect(jsonPath("$.currentWeek").value(1))
                 .andExpect(jsonPath("$.plan.ruleVersion").value("FAT_LOSS_V1"));
+        String measurementId = jdbc.queryForObject(
+                "SELECT id FROM body_measurements WHERE user_id=? ORDER BY measured_at DESC,id DESC LIMIT 1",
+                String.class, USER_A);
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject(
+                "SELECT source_measurement_id FROM health_plan_versions v JOIN health_plans p ON p.id=v.plan_id "
+                        + "WHERE p.user_id=? AND v.version_number=1", String.class, USER_A))
+                .isEqualTo(measurementId);
 
         mockMvc.perform(get("/api/v1/plans/current").with(user(USER_A)))
                 .andExpect(status().isOk())
@@ -158,11 +171,45 @@ class PlanIntegrationTests {
                 .andExpect(jsonPath("$.plan").doesNotExist());
     }
 
+    @Test
+    void deletingSourceMeasurementDeletesLinkedPlanAndReportButKeepsUnrelatedReport() throws Exception {
+        createPlan(USER_A);
+        String measurementId = jdbc.queryForObject("SELECT source_measurement_id FROM health_plan_versions v "
+                + "JOIN health_plans p ON p.id=v.plan_id WHERE p.user_id=?", String.class, USER_A);
+        report("measurement-report", "measurement-report-key", 1);
+        report("unrelated-measurement-report", "unrelated-measurement-key", 2);
+        jdbc.update("INSERT INTO health_report_sources (report_id,section_code,metric_code,source_type,source_id,source_local_date,location_label) "
+                + "VALUES ('measurement-report','WEIGHT_PLAN','WEIGHT','WEIGHT_MEASUREMENT',?,CURRENT_DATE,'体重记录')", measurementId);
+        String codeBody = mockMvc.perform(post("/api/v1/auth/sms/send").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"phone\":\"13800000001\",\"purpose\":\"HEALTH_DATA_DELETE\"}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String code = JsonPath.read(codeBody, "$.debugCode");
+
+        mockMvc.perform(post("/api/v1/health-data-deletion").with(user(USER_A))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dataTypes\":[\"MEASUREMENTS\"],\"code\":\"%s\"}".formatted(code)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.deletedImpact.affectedPlanVersions").value(1));
+
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM health_plans WHERE user_id=?", Integer.class, USER_A)).isZero();
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM health_reports WHERE id='measurement-report'", Integer.class)).isZero();
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM health_reports WHERE id='unrelated-measurement-report'", Integer.class)).isEqualTo(1);
+    }
+
     private String createPlan(String userId) throws Exception {
         mockMvc.perform(post("/api/v1/plans").with(user(userId))
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isCreated());
         return jdbc.queryForObject("SELECT id FROM health_plans WHERE user_id=?", String.class, userId);
+    }
+
+    private void report(String id, String key, int version) {
+        jdbc.update("INSERT INTO health_reports (id,user_id,report_type,period_start,period_end,timezone,period_status,"
+                        + "version,rules_version,data_cutoff_at,input_hash,snapshot_json,idempotency_key) "
+                        + "VALUES (?,?,'DAILY',?,?,'Asia/Shanghai','COMPLETE',?,'v1',CURRENT_TIMESTAMP,?,'{}',?)",
+                id, USER_A, LocalDate.now(), LocalDate.now(), version, "0".repeat(64), key);
     }
 
     private void createCompleteProfile(String userId, String phone) {

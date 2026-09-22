@@ -32,6 +32,12 @@ class HealthDataDeletionIntegrationTests {
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
+        jdbc.update("DELETE FROM health_report_sources WHERE report_id IN (SELECT id FROM health_reports WHERE user_id=?)", USER);
+        jdbc.update("DELETE FROM health_reports WHERE user_id=?", USER);
+        jdbc.update("DELETE FROM health_data_deletion_jobs WHERE user_id=?", USER);
+        jdbc.update("DELETE FROM hydration_entries WHERE user_id=?", USER);
+        jdbc.update("DELETE FROM verification_codes WHERE phone=?", PHONE);
+        jdbc.update("DELETE FROM users WHERE id=?", USER);
         jdbc.update("INSERT INTO users (id,phone,status) VALUES (?,?, 'ACTIVE')", USER, PHONE);
         jdbc.update("INSERT INTO hydration_entries (id,user_id,amount_ml,occurred_at,timezone,source,idempotency_key) "
                 + "VALUES ('delete-water',?,300,CURRENT_TIMESTAMP,'Asia/Shanghai','CUSTOM','delete-water')", USER);
@@ -43,6 +49,10 @@ class HealthDataDeletionIntegrationTests {
 
     @Test
     void previewIsServerCalculatedAndDeletingSourceRemovesOnlyRelatedReport() throws Exception {
+        mockMvc.perform(post("/api/v1/health-data-deletion/preview").with(user(USER))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"dataTypes\":[\"PROFILE\",\"REPORTS\"]}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.recordCounts.PROFILE").value(0))
+                .andExpect(jsonPath("$.recordCounts.REPORTS").value(2));
         mockMvc.perform(post("/api/v1/health-data-deletion/preview").with(user(USER))
                         .contentType(MediaType.APPLICATION_JSON).content("{\"dataTypes\":[\"HYDRATION\"]}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.recordCounts.HYDRATION").value(1))
@@ -60,6 +70,31 @@ class HealthDataDeletionIntegrationTests {
         assertThat(count("hydration_entries", "id='delete-water'")).isZero();
         assertThat(count("health_reports", "id='related-report'")).isZero();
         assertThat(count("health_reports", "id='unrelated-report'")).isEqualTo(1);
+    }
+
+    @Test
+    void dateRangeAndUserIsolationAreAppliedAndFailedVerificationRollsBack() throws Exception {
+        jdbc.update("INSERT INTO hydration_entries (id,user_id,amount_ml,occurred_at,timezone,source,idempotency_key) "
+                + "VALUES ('old-water',?,200,TIMESTAMP '2026-01-01 08:00:00','Asia/Shanghai','CUSTOM','old-water')", USER);
+        jdbc.update("MERGE INTO users (id,phone,status) KEY(id) VALUES ('other-health-delete','13600004002','ACTIVE')");
+        jdbc.update("MERGE INTO hydration_entries (id,user_id,amount_ml,occurred_at,timezone,source,idempotency_key) "
+                + "KEY(id) VALUES ('other-water','other-health-delete',500,CURRENT_TIMESTAMP,'Asia/Shanghai','CUSTOM','other-water')");
+
+        String range = LocalDate.now().toString();
+        mockMvc.perform(post("/api/v1/health-data-deletion/preview").with(user(USER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dataTypes\":[\"HYDRATION\"],\"fromDate\":\"%s\",\"toDate\":\"%s\"}".formatted(range, range)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.recordCounts.HYDRATION").value(1));
+
+        mockMvc.perform(post("/api/v1/health-data-deletion").with(user(USER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dataTypes\":[\"HYDRATION\"],\"fromDate\":\"%s\",\"toDate\":\"%s\",\"code\":\"000000\"}"
+                                .formatted(range, range)))
+                .andExpect(status().isUnauthorized());
+        assertThat(count("hydration_entries", "id='delete-water'")).isEqualTo(1);
+        assertThat(count("hydration_entries", "id='old-water'")).isEqualTo(1);
+        assertThat(count("hydration_entries", "id='other-water'")).isEqualTo(1);
+        assertThat(count("health_data_deletion_jobs", "user_id='" + USER + "'")).isZero();
     }
 
     private void report(String id, String key, int version) {
