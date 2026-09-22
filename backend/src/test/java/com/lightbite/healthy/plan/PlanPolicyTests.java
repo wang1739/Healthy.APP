@@ -27,7 +27,7 @@ class PlanPolicyTests {
         PlanPolicy.ProfileSnapshot underweight = new PlanPolicy.ProfileSnapshot(
                 true, false, 30, "FEMALE", "FEMALE", new BigDecimal("180"),
                 new BigDecimal("55"), "LIGHT", new BigDecimal("7"), 2, "FAT_LOSS",
-                new BigDecimal("50"), LocalDate.of(2027, 1, 1), 1);
+                new BigDecimal("50"), LocalDate.of(2027, 1, 1), 1, "measurement-1");
         assertThatThrownBy(() -> policy.validateProfile(underweight))
                 .extracting("code").isEqualTo("PLAN_BMI_UNSAFE");
     }
@@ -45,6 +45,6 @@ class PlanPolicyTests {
     private PlanPolicy.ProfileSnapshot profile(String sex, String basis, String goal, boolean blocked) {
         return new PlanPolicy.ProfileSnapshot(true, blocked, 31, sex, basis, new BigDecimal("165"),
                 new BigDecimal("62.5"), "LIGHT", new BigDecimal("7.5"), 2, goal,
-                new BigDecimal("55"), LocalDate.of(2027, 1, 1), 3);
+                new BigDecimal("55"), LocalDate.of(2027, 1, 1), 3, "measurement-1");
     }
 }

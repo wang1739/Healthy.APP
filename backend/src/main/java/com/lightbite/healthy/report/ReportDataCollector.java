@@ -197,6 +197,7 @@ public class ReportDataCollector {
                 FROM health_plans p JOIN health_plan_versions v ON v.plan_id=p.id
                 LEFT JOIN health_profiles hp ON hp.user_id=p.user_id
                 WHERE p.user_id=? AND p.phase_start_date<=? AND p.phase_end_date>=? AND v.created_at<?
+                  AND v.status <> 'PREVIEW'
                 ORDER BY v.version_number DESC
                 """, (rs, n) -> new Plan(rs.getString(1), rs.getString(2), rs.getInt(3), rs.getInt(4), rs.getInt(5),
                 rs.getInt(6), rs.getInt(7), rs.getInt(8), rs.getInt(9), rs.getInt(10),

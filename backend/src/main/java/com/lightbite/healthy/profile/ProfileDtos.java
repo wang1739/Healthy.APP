@@ -78,4 +78,70 @@ public final class ProfileDtos {
             LocalDate birthDate
     ) {
     }
+
+    public record BasicInfoRequest(LocalDate birthDate, String sex, String metabolicBasis) {
+    }
+
+    public record BodyDataRequest(
+            @DecimalMin("100") @DecimalMax("230") BigDecimal heightCm,
+            @DecimalMin("30") @DecimalMax("300") BigDecimal weightKg,
+            @DecimalMin("40") @DecimalMax("200") BigDecimal waistCm,
+            @DecimalMin("2") @DecimalMax("70") BigDecimal bodyFatPercent
+    ) {
+    }
+
+    public record LifestyleRequest(
+            String activityLevel,
+            String workStyle,
+            @DecimalMin("0") @DecimalMax("24") BigDecimal sleepHours,
+            @Min(0) @Max(7) Integer exerciseDays
+    ) {
+    }
+
+    public record HealthGoalRequest(
+            String goalType,
+            @DecimalMin("30") @DecimalMax("300") BigDecimal targetWeightKg,
+            LocalDate targetDate
+    ) {
+    }
+
+    public record BasicInfoResponse(LocalDate birthDate, String sex, String metabolicBasis) {
+    }
+
+    public record BodyDataResponse(BigDecimal heightCm, MeasurementResponse latestMeasurement) {
+    }
+
+    public record LifestyleResponse(
+            String activityLevel, String workStyle, BigDecimal sleepHours, Integer exerciseDays
+    ) {
+    }
+
+    public record DietaryPreferencesResponse(String dietType, String allergies, String avoidFoods) {
+    }
+
+    public record HealthGoalResponse(String goalType, BigDecimal targetWeightKg, LocalDate targetDate) {
+    }
+
+    public record RiskInfoResponse(
+            boolean pregnant,
+            boolean breastfeeding,
+            boolean eatingDisorderRisk,
+            boolean seriousChronicDisease,
+            boolean unsafeTarget,
+            boolean riskBlocked
+    ) {
+    }
+
+    public record ProfileSectionsResponse(
+            BasicInfoResponse basicInfo,
+            BodyDataResponse bodyData,
+            LifestyleResponse lifestyle,
+            DietaryPreferencesResponse dietaryPreferences,
+            HealthGoalResponse healthGoal,
+            RiskInfoResponse riskInfo,
+            boolean complete,
+            boolean planNeedsRecalculation,
+            long profileVersion
+    ) {
+    }
 }
