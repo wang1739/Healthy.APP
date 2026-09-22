@@ -43,6 +43,7 @@ class _ProfileSectionPageState extends State<ProfileSectionPage> {
   bool _saving = false;
 
   ProfileData get data => widget.controller.state.data!;
+  bool get _goalSupported => data.goalType == 'FAT_LOSS';
 
   @override
   void initState() {
@@ -105,7 +106,8 @@ class _ProfileSectionPageState extends State<ProfileSectionPage> {
           ),
         ],
         const SizedBox(height: AppSpacing.large),
-        if (widget.section != ProfileSection.body)
+        if (widget.section != ProfileSection.body &&
+            (widget.section != ProfileSection.goal || _goalSupported))
           FilledButton(
             onPressed: _saving ? null : _save,
             child: Text(_saving ? '正在保存…' : '保存${widget.section.title}'),
@@ -263,22 +265,47 @@ class _ProfileSectionPageState extends State<ProfileSectionPage> {
     ],
   );
 
-  Widget _goal() => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      const ListTile(
-        contentPadding: EdgeInsets.zero,
-        leading: Icon(Icons.check_circle_outline),
-        title: Text('减脂'),
-        subtitle: Text('当前已开放'),
-      ),
-      const Text('增肌、维持体重和改善饮食等其他目标尚未开放。'),
-      const SizedBox(height: 14),
-      _numberField(_targetWeight, '目标体重（可选）', '千克'),
-      const SizedBox(height: 14),
-      _dateField(_targetDate, '目标日期'),
-    ],
-  );
+  Widget _goal() => !_goalSupported
+      ? Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Icon(Icons.info_outline, size: 40),
+            const SizedBox(height: 12),
+            const Text(
+              '当前目标暂未开放',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '当前档案目标为“${_goalName(data.goalType)}”。本阶段仅支持减脂目标，请等待后续开放。',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        )
+      : Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.check_circle_outline),
+              title: Text('减脂'),
+              subtitle: Text('当前已开放'),
+            ),
+            const Text('增肌、维持体重和改善饮食等其他目标尚未开放。'),
+            const SizedBox(height: 14),
+            _numberField(_targetWeight, '目标体重（可选）', '千克'),
+            const SizedBox(height: 14),
+            _dateField(_targetDate, '目标日期'),
+          ],
+        );
+
+  String _goalName(String value) => switch (value) {
+    'MUSCLE_GAIN' => '增肌',
+    'MAINTAIN' => '维持体重',
+    'BETTER_DIET' => '改善饮食',
+    _ => '暂未开放的目标',
+  };
 
   Widget _risk() => Column(
     children: [

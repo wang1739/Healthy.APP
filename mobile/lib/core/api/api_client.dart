@@ -249,8 +249,26 @@ class ApiClient {
 
   Future<Map<String, dynamic>> saveProfileSection(
     String section,
-    Map<String, dynamic> data,
-  ) async {
+    Map<String, dynamic> data, {
+    required int expectedVersion,
+  }) async {
+    if (section == 'goal' &&
+        data['goalType'] != null &&
+        data['goalType'] != 'FAT_LOSS') {
+      throw const FormatException('当前目标的个性计划尚未开放');
+    }
+    if (section == 'risk') {
+      const fields = [
+        'pregnant',
+        'breastfeeding',
+        'eatingDisorderRisk',
+        'seriousChronicDisease',
+        'unsafeTarget',
+      ];
+      if (fields.any((field) => data[field] is! bool)) {
+        throw const FormatException('请完整填写风险评估');
+      }
+    }
     final path = switch (section) {
       'basic' => 'basic-info',
       'body' => 'body-data',
@@ -262,7 +280,7 @@ class ApiClient {
     final response = await _authorized(
       'PUT',
       '/profile/sections/$path',
-      data: data,
+      data: {...data, 'expectedVersion': expectedVersion},
     );
     return Map<String, dynamic>.from(response.data as Map);
   }

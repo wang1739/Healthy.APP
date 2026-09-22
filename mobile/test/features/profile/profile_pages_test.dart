@@ -8,7 +8,9 @@ import 'package:healthy/features/profile/presentation/profile_overview_page.dart
 
 class _ProfileApi extends ApiClient {
   final saves = <String, Map<String, dynamic>>{};
+  final expectedVersions = <String, int>{};
   bool needsRecalculation = false;
+  String goalType = 'FAT_LOSS';
 
   @override
   Future<Map<String, dynamic>> profileCompleteness() async => {
@@ -19,38 +21,37 @@ class _ProfileApi extends ApiClient {
 
   @override
   Future<Map<String, dynamic>> getProfileSections() async => {
+    'profileVersion': 4,
     'planNeedsRecalculation': needsRecalculation,
-    'sections': {
-      'basic': {
-        'birthDate': '1996-05-12',
-        'sex': 'FEMALE',
-        'metabolicBasis': 'FEMALE',
-      },
-      'body': {'heightCm': 165},
-      'lifestyle': {
-        'activityLevel': 'LIGHT',
-        'workStyle': 'SEDENTARY',
-        'sleepHours': 7.5,
-        'exerciseDays': 3,
-      },
-      'preferences': {
-        'dietType': 'BALANCED',
-        'allergies': '花生',
-        'avoidFoods': '香菜',
-      },
-      'goal': {
-        'goalType': 'FAT_LOSS',
-        'targetWeightKg': 58,
-        'targetDate': '2027-01-20',
-      },
-      'risk': {
-        'pregnant': false,
-        'breastfeeding': false,
-        'eatingDisorderRisk': false,
-        'seriousChronicDisease': false,
-        'unsafeTarget': false,
-        'riskBlocked': false,
-      },
+    'basicInfo': {
+      'birthDate': '1996-05-12',
+      'sex': 'FEMALE',
+      'metabolicBasis': 'FEMALE',
+    },
+    'bodyData': {'heightCm': 165},
+    'lifestyle': {
+      'activityLevel': 'LIGHT',
+      'workStyle': 'SEDENTARY',
+      'sleepHours': 7.5,
+      'exerciseDays': 3,
+    },
+    'dietaryPreferences': {
+      'dietType': 'BALANCED',
+      'allergies': '花生',
+      'avoidFoods': '香菜',
+    },
+    'healthGoal': {
+      'goalType': goalType,
+      'targetWeightKg': 58,
+      'targetDate': '2027-01-20',
+    },
+    'riskInfo': {
+      'pregnant': false,
+      'breastfeeding': false,
+      'eatingDisorderRisk': false,
+      'seriousChronicDisease': false,
+      'unsafeTarget': false,
+      'riskBlocked': false,
     },
   };
 
@@ -68,9 +69,11 @@ class _ProfileApi extends ApiClient {
   @override
   Future<Map<String, dynamic>> saveProfileSection(
     String section,
-    Map<String, dynamic> data,
-  ) async {
+    Map<String, dynamic> data, {
+    required int expectedVersion,
+  }) async {
     saves[section] = data;
+    expectedVersions[section] = expectedVersion;
     needsRecalculation = section == 'basic';
     return getProfileSections();
   }
@@ -123,6 +126,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(api.saves.keys, ['basic']);
+    expect(api.expectedVersions['basic'], 4);
     expect(find.text('计划需要重新计算'), findsWidgets);
     expect(find.textContaining('旧计划继续显示'), findsOneWidget);
   });
@@ -156,6 +160,18 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('减脂'), findsOneWidget);
     expect(find.textContaining('其他目标尚未开放'), findsOneWidget);
+  });
+
+  testWidgets('既有非减脂目标只显示中文未开放说明且不能写入', (tester) async {
+    final api = _ProfileApi()..goalType = 'MUSCLE_GAIN';
+    await _pump(tester, api);
+    await tester.tap(find.text('健康目标'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('当前目标暂未开放'), findsOneWidget);
+    expect(find.textContaining('本阶段仅支持减脂目标'), findsOneWidget);
+    expect(find.text('保存健康目标'), findsNothing);
+    expect(api.saves, isEmpty);
   });
 
   testWidgets('窄屏与 1.3 倍字体无布局异常', (tester) async {

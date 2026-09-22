@@ -5,6 +5,7 @@ import 'package:healthy/core/theme/app_spacing.dart';
 import 'package:healthy/features/profile/application/profile_controller.dart';
 import 'package:healthy/features/profile/domain/profile_data.dart';
 import 'package:healthy/features/profile/presentation/profile_section_page.dart';
+import 'package:healthy/features/plan/application/plan_controller.dart';
 
 class ProfileOverviewPage extends ConsumerStatefulWidget {
   const ProfileOverviewPage({required this.session, super.key});
@@ -94,6 +95,9 @@ class _ProfileOverviewPageState extends ConsumerState<ProfileOverviewPage> {
     );
     await controller.load();
     await widget.session.refreshProfileState();
+    if (!widget.session.riskBlocked) {
+      await ref.read(planControllerProvider(widget.session.api)).load();
+    }
   }
 
   IconData _icon(ProfileSection section) => switch (section) {

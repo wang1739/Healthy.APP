@@ -42,10 +42,25 @@ void main() {
     await api.saveProfileSection('lifestyle', {
       'workStyle': 'ACTIVE',
       'sleepHours': 8,
-    });
+    }, expectedVersion: 4);
     await api.getProfileMeasurements();
-    await api.saveProfileSection('basic', {'birthDate': '1990-01-01'});
-    await api.saveProfileSection('goal', {'goalType': 'FAT_LOSS'});
+    await api.saveProfileSection('basic', {
+      'birthDate': '1990-01-01',
+    }, expectedVersion: 5);
+    await api.saveProfileSection('body', {'heightCm': 178}, expectedVersion: 6);
+    await api.saveProfileSection('goal', {
+      'goalType': 'FAT_LOSS',
+    }, expectedVersion: 7);
+    await api.saveProfileSection('preferences', {
+      'dietType': 'BALANCED',
+    }, expectedVersion: 8);
+    await api.saveProfileSection('risk', {
+      'pregnant': false,
+      'breastfeeding': false,
+      'eatingDisorderRisk': false,
+      'seriousChronicDisease': false,
+      'unsafeTarget': false,
+    }, expectedVersion: 9);
 
     expect(
       adapter.requests.map((request) => '${request.method} ${request.path}'),
@@ -54,9 +69,24 @@ void main() {
         'PUT /profile/sections/lifestyle',
         'GET /profile/measurements',
         'PUT /profile/sections/basic-info',
+        'PUT /profile/sections/body-data',
         'PUT /profile/sections/health-goal',
+        'PUT /profile/sections/dietary-preferences',
+        'PUT /profile/sections/risk-info',
       ],
     );
-    expect(adapter.requests[1].data, {'workStyle': 'ACTIVE', 'sleepHours': 8});
+    expect(adapter.requests[1].data, {
+      'workStyle': 'ACTIVE',
+      'sleepHours': 8,
+      'expectedVersion': 4,
+    });
+    expect(adapter.requests.last.data, {
+      'pregnant': false,
+      'breastfeeding': false,
+      'eatingDisorderRisk': false,
+      'seriousChronicDisease': false,
+      'unsafeTarget': false,
+      'expectedVersion': 9,
+    });
   });
 }

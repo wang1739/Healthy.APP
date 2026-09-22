@@ -15,6 +15,7 @@ class PlanPage extends ConsumerStatefulWidget {
     required this.onConfirmed,
     required this.onEditProfile,
     this.autoPreview = false,
+    this.sessionRevision = 0,
     super.key,
   });
 
@@ -25,6 +26,7 @@ class PlanPage extends ConsumerStatefulWidget {
   final VoidCallback onConfirmed;
   final VoidCallback onEditProfile;
   final bool autoPreview;
+  final int sessionRevision;
 
   @override
   ConsumerState<PlanPage> createState() => _PlanPageState();
@@ -41,6 +43,24 @@ class _PlanPageState extends ConsumerState<PlanPage> {
         () => ref
             .read(planControllerProvider(widget.api))
             .load(autoPreview: widget.autoPreview),
+      );
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant PlanPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.sessionRevision != widget.sessionRevision) {
+      _previewAdjustments = null;
+    }
+    final becameAvailable =
+        widget.access == UserAccess.profileComplete &&
+        !widget.riskBlocked &&
+        (oldWidget.access != UserAccess.profileComplete ||
+            oldWidget.riskBlocked);
+    if (becameAvailable) {
+      Future.microtask(
+        () => ref.read(planControllerProvider(widget.api)).load(),
       );
     }
   }
@@ -486,9 +506,10 @@ class _PlanPageState extends ConsumerState<PlanPage> {
   }
 
   Future<void> _history(PlanController controller) async {
+    final sessionRevision = widget.sessionRevision;
     try {
       final items = await controller.history();
-      if (!mounted) return;
+      if (!mounted || widget.sessionRevision != sessionRevision) return;
       await showModalBottomSheet<void>(
         context: context,
         showDragHandle: true,
@@ -521,13 +542,18 @@ class _PlanPageState extends ConsumerState<PlanPage> {
         ),
       );
     } catch (error) {
-      _show(ApiClient.errorMessage(error));
+      if (mounted && widget.sessionRevision == sessionRevision) {
+        _show(ApiClient.errorMessage(error));
+      }
     }
   }
 
   Future<void> _feedback(Future<bool> operation, String success) async {
     final ok = await operation;
-    if (mounted) _show(ok ? success : '操作失败，请重试');
+    if (mounted) {
+      final controller = ref.read(planControllerProvider(widget.api));
+      _show(ok ? success : controller.state.error ?? '操作失败，请重试');
+    }
   }
 
   void _show(String message) =>

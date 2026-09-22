@@ -40,6 +40,7 @@ class BodyMeasurement {
 
 class ProfileData {
   const ProfileData({
+    required this.profileVersion,
     required this.planNeedsRecalculation,
     required this.birthDate,
     required this.sex,
@@ -78,7 +79,10 @@ class ProfileData {
     final goal = _section(sections, json, 'goal', 'healthGoal');
     final risk = _section(sections, json, 'risk', 'riskInfo');
     final history = body['measurements'] ?? json['measurements'];
+    final latest = body['latestMeasurement'] ?? body['latest_measurement'];
     return ProfileData(
+      profileVersion:
+          _number(json, 'profileVersion', 'profile_version')?.round() ?? 0,
       planNeedsRecalculation:
           json['planNeedsRecalculation'] == true ||
           json['plan_needs_recalculation'] == true,
@@ -94,6 +98,8 @@ class ProfileData {
                       BodyMeasurement.fromJson(Map<String, dynamic>.from(item)),
                 )
                 .toList()
+          : latest is Map
+          ? [BodyMeasurement.fromJson(Map<String, dynamic>.from(latest))]
           : const [],
       activityLevel:
           _text(lifestyle, 'activityLevel', 'activity_level') ?? 'LIGHT',
@@ -123,6 +129,7 @@ class ProfileData {
     );
   }
 
+  final int profileVersion;
   final bool planNeedsRecalculation;
   final String? birthDate;
   final String sex;
@@ -147,6 +154,7 @@ class ProfileData {
   final bool riskBlocked;
 
   ProfileData withMeasurements(List<BodyMeasurement> values) => ProfileData(
+    profileVersion: profileVersion,
     planNeedsRecalculation: planNeedsRecalculation,
     birthDate: birthDate,
     sex: sex,

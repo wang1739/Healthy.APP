@@ -4,6 +4,7 @@ import 'package:healthy/features/profile/domain/profile_data.dart';
 void main() {
   test('解析六分区和身体测量历史', () {
     final profile = ProfileData.fromJson({
+      'profileVersion': 7,
       'planNeedsRecalculation': true,
       'sections': {
         'basic': {
@@ -51,6 +52,7 @@ void main() {
     });
 
     expect(profile.planNeedsRecalculation, isTrue);
+    expect(profile.profileVersion, 7);
     expect(profile.birthDate, '1996-05-12');
     expect(profile.heightCm, 165);
     expect(profile.measurements.single.weightKg, 62.5);
@@ -79,12 +81,27 @@ void main() {
         'sex': 'MALE',
         'metabolicBasis': 'MALE',
       },
-      'bodyData': {'heightCm': 178},
+      'bodyData': {
+        'heightCm': 178,
+        'latestMeasurement': {
+          'id': 'm2',
+          'weightKg': 72,
+          'measuredAt': '2026-09-22T08:00:00Z',
+        },
+      },
       'lifestyle': {'activityLevel': 'HIGH'},
       'dietaryPreferences': {'dietType': 'LOW_CARB', 'allergies': '花生'},
       'healthGoal': {'goalType': 'FAT_LOSS', 'targetWeightKg': 70},
-      'riskInfo': {'riskBlocked': true},
+      'riskInfo': {
+        'pregnant': false,
+        'breastfeeding': false,
+        'eatingDisorderRisk': false,
+        'seriousChronicDisease': true,
+        'unsafeTarget': false,
+        'riskBlocked': true,
+      },
       'planNeedsRecalculation': true,
+      'profileVersion': 11,
     });
 
     expect(profile.sex, 'MALE');
@@ -92,5 +109,8 @@ void main() {
     expect(profile.dietType, 'LOW_CARB');
     expect(profile.targetWeightKg, 70);
     expect(profile.riskBlocked, isTrue);
+    expect(profile.seriousChronicDisease, isTrue);
+    expect(profile.measurements.single.id, 'm2');
+    expect(profile.profileVersion, 11);
   });
 }

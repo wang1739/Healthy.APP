@@ -55,26 +55,48 @@ class ProfileController extends ChangeNotifier {
     String section,
     Map<String, dynamic> data,
   ) async {
+    final current = state.data;
+    if (current == null) return ProfileSaveResult.failed;
+    final validationError = _validationError(section, data, current);
+    if (validationError != null) {
+      state = ProfileViewState(
+        data: current,
+        error: validationError,
+        draft: data,
+      );
+      notifyListeners();
+      return ProfileSaveResult.failed;
+    }
     final criticalChanged = _criticalChanged(section, data);
-    state = ProfileViewState(data: state.data, saving: true, draft: data);
+    state = ProfileViewState(data: current, saving: true, draft: data);
     notifyListeners();
     try {
-      final response = await api.saveProfileSection(section, data);
-      final fresh = response['sections'] is Map || response['basicInfo'] is Map
-          ? response
-          : await api.getProfileSections();
-      final measurements = await api.getProfileMeasurements();
-      final updated = ProfileData.fromJson(
-        fresh,
-      ).withMeasurements(measurements.map(BodyMeasurement.fromJson).toList());
+      final response = await api.saveProfileSection(
+        section,
+        data,
+        expectedVersion: current.profileVersion,
+      );
+      final fresh = ProfileData.fromJson(response);
+      final updated = fresh.withMeasurements(
+        _mergeMeasurements(fresh.measurements, current.measurements),
+      );
       state = ProfileViewState(data: updated);
       notifyListeners();
       return criticalChanged && updated.planNeedsRecalculation
           ? ProfileSaveResult.recalculationRequired
           : ProfileSaveResult.saved;
     } catch (error) {
+      var refreshed = current;
+      if (ApiClient.errorCode(error) == 'PROFILE_VERSION_CONFLICT') {
+        try {
+          final response = ProfileData.fromJson(await api.getProfileSections());
+          refreshed = response.withMeasurements(
+            _mergeMeasurements(response.measurements, current.measurements),
+          );
+        } catch (_) {}
+      }
       state = ProfileViewState(
-        data: state.data,
+        data: refreshed,
         error: ApiClient.errorMessage(error),
         draft: data,
       );
@@ -89,7 +111,10 @@ class ProfileController extends ChangeNotifier {
     try {
       await api.addMeasurement(data);
       await load();
-      return ProfileSaveResult.recalculationRequired;
+      if (state.error != null) return ProfileSaveResult.failed;
+      return state.data?.planNeedsRecalculation == true
+          ? ProfileSaveResult.recalculationRequired
+          : ProfileSaveResult.saved;
     } catch (error) {
       state = ProfileViewState(
         data: state.data,
@@ -115,6 +140,40 @@ class ProfileController extends ChangeNotifier {
       (key) =>
           draft.containsKey(key) && '${draft[key]}' != '${current.value(key)}',
     );
+  }
+
+  List<BodyMeasurement> _mergeMeasurements(
+    List<BodyMeasurement> fresh,
+    List<BodyMeasurement> existing,
+  ) {
+    if (fresh.isEmpty) return existing;
+    final latest = fresh.first;
+    return [latest, ...existing.where((item) => item.id != latest.id)];
+  }
+
+  String? _validationError(
+    String section,
+    Map<String, dynamic> draft,
+    ProfileData current,
+  ) {
+    if (section == 'goal' &&
+        (current.goalType != 'FAT_LOSS' ||
+            (draft['goalType'] != null && draft['goalType'] != 'FAT_LOSS'))) {
+      return '当前目标的个性计划尚未开放';
+    }
+    if (section == 'risk') {
+      const fields = [
+        'pregnant',
+        'breastfeeding',
+        'eatingDisorderRisk',
+        'seriousChronicDisease',
+        'unsafeTarget',
+      ];
+      if (fields.any((field) => draft[field] is! bool)) {
+        return '请完整填写风险评估';
+      }
+    }
+    return null;
   }
 }
 
