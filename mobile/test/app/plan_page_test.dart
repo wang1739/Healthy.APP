@@ -49,6 +49,7 @@ class _FakePlanApi extends ApiClient {
   String? previewErrorCode;
   bool fail = false;
   int confirmed = 0;
+  int previewed = 0;
   int recalculated = 0;
   int paused = 0;
   int resumed = 0;
@@ -61,6 +62,7 @@ class _FakePlanApi extends ApiClient {
 
   @override
   Future<Map<String, dynamic>> previewPlan() async {
+    previewed++;
     if (previewErrorCode != null) {
       final request = RequestOptions();
       throw DioException(
@@ -87,6 +89,23 @@ class _FakePlanApi extends ApiClient {
   Future<Map<String, dynamic>> recalculatePlan(
     String id, {
     required int expectedVersion,
+  }) async {
+    previewed++;
+    return {
+      'state': 'RECALCULATION_PREVIEW',
+      'planId': id,
+      'baseVersion': expectedVersion,
+      'previewVersion': expectedVersion + 1,
+      'previewId': 'preview-1',
+      'plan': preview ?? _plan(status: 'PREVIEW'),
+    };
+  }
+
+  @override
+  Future<Map<String, dynamic>> confirmPlanRecalculation(
+    String id, {
+    required int expectedVersion,
+    required String previewId,
   }) async {
     recalculated++;
     return current = _plan();
@@ -233,18 +252,37 @@ void main() {
     expect(find.text('重试'), findsOneWidget);
   });
 
-  testWidgets('确认、重算、暂停和恢复调用计划接口', (tester) async {
+  testWidgets('重新计算先预览变化，取消保留旧计划，确认后才生效', (tester) async {
+    final api = _FakePlanApi(
+      _plan(needsRecalculation: true),
+      preview: {
+        ..._plan(status: 'PREVIEW'),
+        'targetKcal': 1600,
+      },
+    );
+    await _pump(tester, api);
+    await _tapVisible(tester, '重新计算');
+    expect(api.previewed, 1);
+    expect(api.recalculated, 0);
+    expect(find.text('新计划预览'), findsOneWidget);
+    expect(find.textContaining('1700 → 1600'), findsOneWidget);
+    await _tapVisible(tester, '取消');
+    expect(find.text('需要重新计算'), findsOneWidget);
+    expect(find.text('1700'), findsOneWidget);
+    expect(api.recalculated, 0);
+
+    await _tapVisible(tester, '重新计算');
+    await _tapVisible(tester, '确认使用新计划');
+    expect(api.recalculated, 1);
+  });
+
+  testWidgets('确认、暂停和恢复调用计划接口', (tester) async {
     final previewApi = _FakePlanApi(_plan(status: 'PREVIEW'));
     var enteredToday = false;
     await _pump(tester, previewApi, onConfirmed: () => enteredToday = true);
     await _tapVisible(tester, '确认采用计划');
     expect(previewApi.confirmed, 1);
     expect(enteredToday, isTrue);
-
-    final recalculateApi = _FakePlanApi(_plan(needsRecalculation: true));
-    await _pump(tester, recalculateApi);
-    await _tapVisible(tester, '重新计算');
-    expect(recalculateApi.recalculated, 1);
 
     final pauseApi = _FakePlanApi(_plan());
     await _pump(tester, pauseApi);

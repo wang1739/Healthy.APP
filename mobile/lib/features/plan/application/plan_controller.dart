@@ -19,6 +19,7 @@ class PlanData {
         (json['state'] ?? json['status'])?.toString().toUpperCase() ?? 'EMPTY';
     final kind = switch (status) {
       'PREVIEW' => PlanKind.preview,
+      'RECALCULATION_PREVIEW' => PlanKind.preview,
       'ACTIVE' ||
       'NEEDS_RECALCULATION' ||
       'PENDING_RECALCULATION' => PlanKind.active,
@@ -56,6 +57,7 @@ class PlanData {
   String? get id => value('id')?.toString() ?? raw['planId']?.toString();
   int get version =>
       (value('currentVersion') as num?)?.toInt() ??
+      (value('baseVersion') as num?)?.toInt() ??
       (value('version') as num?)?.toInt() ??
       (value('versionNumber') as num?)?.toInt() ??
       1;
@@ -76,6 +78,7 @@ class PlanData {
   String get ruleVersion => value('ruleVersion')?.toString() ?? 'FAT_LOSS_V1';
   String? get pausedAt => value('pausedAt')?.toString();
   String? get suggestedTargetDate => value('suggestedTargetDate')?.toString();
+  String? get previewId => value('previewId')?.toString();
 
   int get minimumTargetKcal {
     final supplied = (value('minimumTargetKcal') as num?)?.toInt();
@@ -92,15 +95,25 @@ class PlanData {
 }
 
 class PlanViewState {
-  const PlanViewState({this.data, this.loading = false, this.error});
+  const PlanViewState({
+    this.data,
+    this.previous,
+    this.recalculationPreview = false,
+    this.loading = false,
+    this.error,
+  });
 
   final PlanData? data;
+  final PlanData? previous;
+  final bool recalculationPreview;
   final bool loading;
   final String? error;
 
   PlanViewState copyWith({PlanData? data, bool? loading, String? error}) =>
       PlanViewState(
         data: data ?? this.data,
+        previous: previous,
+        recalculationPreview: recalculationPreview,
         loading: loading ?? this.loading,
         error: error,
       );
@@ -137,11 +150,86 @@ class PlanController extends ChangeNotifier {
     );
   }
 
-  Future<bool> recalculate() async => _withPlan(
-    (id) async => PlanData.fromJson(
-      await api.recalculatePlan(id, expectedVersion: state.data!.version),
-    ),
-  );
+  Future<bool> prepareRecalculation() async {
+    final current = state.data;
+    if (current?.id == null) return false;
+    state = PlanViewState(data: current, loading: true);
+    notifyListeners();
+    try {
+      final preview = PlanData.fromJson({
+        ...await api.recalculatePlan(
+          current!.id!,
+          expectedVersion: current.version,
+        ),
+        'status': 'PREVIEW',
+      });
+      state = PlanViewState(
+        data: preview,
+        previous: current,
+        recalculationPreview: true,
+      );
+      notifyListeners();
+      return true;
+    } catch (error) {
+      state = PlanViewState(
+        data: current,
+        error: ApiClient.errorMessage(error),
+      );
+      notifyListeners();
+      return false;
+    }
+  }
+
+  void cancelRecalculation() {
+    final previous = state.previous;
+    if (previous == null) return;
+    state = PlanViewState(data: previous);
+    notifyListeners();
+  }
+
+  Future<bool> confirmRecalculation() async {
+    final previous = state.previous;
+    if (previous?.id == null) return false;
+    state = PlanViewState(
+      data: state.data,
+      previous: previous,
+      recalculationPreview: true,
+      loading: true,
+    );
+    notifyListeners();
+    try {
+      final previewId = state.data?.previewId;
+      if (previewId == null) {
+        state = PlanViewState(
+          data: state.data,
+          previous: previous,
+          recalculationPreview: true,
+          error: '计划预览无效，请重新生成',
+        );
+        notifyListeners();
+        return false;
+      }
+      final data = PlanData.fromJson(
+        await api.confirmPlanRecalculation(
+          previous!.id!,
+          expectedVersion: previous.version,
+          previewId: previewId,
+        ),
+      );
+      state = PlanViewState(data: data);
+      notifyListeners();
+      return true;
+    } catch (error) {
+      state = PlanViewState(
+        data: state.data,
+        previous: previous,
+        recalculationPreview: true,
+        error: ApiClient.errorMessage(error),
+      );
+      notifyListeners();
+      return false;
+    }
+  }
 
   Future<bool> pause() async =>
       _withPlan((id) async => PlanData.fromJson(await api.pausePlan(id)));

@@ -91,7 +91,7 @@ class _PlanPageState extends ConsumerState<PlanPage> {
             else if (data.kind == PlanKind.unsupported)
               _unsupported(data)
             else
-              _plan(data, controller, state.loading),
+              _plan(data, controller, state),
           ],
         ),
       ),
@@ -153,7 +153,14 @@ class _PlanPageState extends ConsumerState<PlanPage> {
       children: [
         const Icon(Icons.cloud_off_outlined, size: 20),
         const SizedBox(width: 8),
-        const Expanded(child: Text('暂时无法更新，正在显示上次加载的计划')),
+        Expanded(
+          child: Text(
+            controller.state.error == null ||
+                    controller.state.error!.startsWith('网络连接失败')
+                ? '暂时无法更新，正在显示上次加载的计划'
+                : controller.state.error!,
+          ),
+        ),
         TextButton(onPressed: controller.load, child: const Text('重试')),
       ],
     ),
@@ -225,8 +232,11 @@ class _PlanPageState extends ConsumerState<PlanPage> {
     ),
   );
 
-  Widget _plan(PlanData data, PlanController controller, bool loading) {
-    final title = data.kind == PlanKind.preview
+  Widget _plan(PlanData data, PlanController controller, PlanViewState state) {
+    final loading = state.loading;
+    final title = state.recalculationPreview
+        ? '新计划预览'
+        : data.kind == PlanKind.preview
         ? '计划预览'
         : data.kind == PlanKind.paused
         ? '已暂停'
@@ -248,6 +258,10 @@ class _PlanPageState extends ConsumerState<PlanPage> {
         if (data.needsRecalculation) ...[
           const SizedBox(height: 12),
           _notice('健康档案已变化，旧计划可能不再匹配，请确认后重新计算。'),
+        ],
+        if (state.recalculationPreview && state.previous != null) ...[
+          const SizedBox(height: 12),
+          _changes(state.previous!, data),
         ],
         if (data.kind == PlanKind.paused) ...[
           const SizedBox(height: 12),
@@ -346,7 +360,9 @@ class _PlanPageState extends ConsumerState<PlanPage> {
           onPressed: loading ? null : () => _primary(data, controller),
           child: Text(
             data.kind == PlanKind.preview
-                ? '确认采用计划'
+                ? state.recalculationPreview
+                      ? '确认使用新计划'
+                      : '确认采用计划'
                 : data.kind == PlanKind.paused
                 ? '恢复计划'
                 : data.needsRecalculation
@@ -355,11 +371,17 @@ class _PlanPageState extends ConsumerState<PlanPage> {
           ),
         ),
         const SizedBox(height: 8),
-        if (data.kind != PlanKind.paused) ...[
+        if (state.recalculationPreview)
           OutlinedButton(
-            onPressed: loading ? null : () => _adjust(data, controller),
-            child: const Text('调整目标'),
+            onPressed: loading ? null : controller.cancelRecalculation,
+            child: const Text('取消'),
           ),
+        if (data.kind != PlanKind.paused) ...[
+          if (!state.recalculationPreview)
+            OutlinedButton(
+              onPressed: loading ? null : () => _adjust(data, controller),
+              child: const Text('调整目标'),
+            ),
           if (data.kind == PlanKind.active)
             TextButton(
               onPressed: loading ? null : () => _pause(controller),
@@ -376,16 +398,52 @@ class _PlanPageState extends ConsumerState<PlanPage> {
   }
 
   Future<void> _primary(PlanData data, PlanController controller) async {
-    if (data.kind == PlanKind.preview) {
+    if (controller.state.recalculationPreview) {
+      await _feedback(controller.confirmRecalculation(), '新计划已生效');
+    } else if (data.kind == PlanKind.preview) {
       final ok = await controller.confirm(_previewAdjustments);
       if (ok && mounted) widget.onConfirmed();
     } else if (data.kind == PlanKind.paused) {
       await _feedback(controller.resume(), '计划已恢复');
     } else if (data.needsRecalculation) {
-      await _feedback(controller.recalculate(), '计划已重新计算');
+      await controller.prepareRecalculation();
     } else {
       widget.onConfirmed();
     }
+  }
+
+  Widget _changes(PlanData oldPlan, PlanData newPlan) {
+    final changes = <String>[
+      if (oldPlan.targetKcal != newPlan.targetKcal)
+        '每日热量：${oldPlan.targetKcal} → ${newPlan.targetKcal} kcal',
+      if (oldPlan.waterMl != newPlan.waterMl)
+        '每日饮水：${oldPlan.waterMl} → ${newPlan.waterMl} ml',
+      if (oldPlan.exerciseDays != newPlan.exerciseDays ||
+          oldPlan.exerciseMinutes != newPlan.exerciseMinutes)
+        '每周运动：${oldPlan.exerciseDays} 天 / ${oldPlan.exerciseMinutes} 分钟 → ${newPlan.exerciseDays} 天 / ${newPlan.exerciseMinutes} 分钟',
+      if (oldPlan.sleepHours != newPlan.sleepHours)
+        '每日睡眠：${oldPlan.sleepHours.toStringAsFixed(1)} → ${newPlan.sleepHours.toStringAsFixed(1)} 小时',
+    ];
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('变化摘要', style: TextStyle(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          if (changes.isEmpty)
+            const Text('主要执行目标没有变化，确认后仍会保存新的计划版本。')
+          else
+            ...changes.map(
+              (change) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(change),
+              ),
+            ),
+          const SizedBox(height: 4),
+          const Text('取消或返回不会修改当前计划。'),
+        ],
+      ),
+    );
   }
 
   Future<void> _pause(PlanController controller) async {

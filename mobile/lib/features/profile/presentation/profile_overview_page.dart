@@ -1,80 +1,116 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:healthy/app/session_controller.dart';
-import 'package:healthy/core/api/api_client.dart';
+import 'package:healthy/core/theme/app_spacing.dart';
+import 'package:healthy/features/profile/application/profile_controller.dart';
+import 'package:healthy/features/profile/domain/profile_data.dart';
+import 'package:healthy/features/profile/presentation/profile_section_page.dart';
 
-class ProfileOverviewPage extends StatefulWidget {
+class ProfileOverviewPage extends ConsumerStatefulWidget {
   const ProfileOverviewPage({required this.session, super.key});
   final SessionController session;
 
   @override
-  State<ProfileOverviewPage> createState() => _ProfileOverviewPageState();
+  ConsumerState<ProfileOverviewPage> createState() =>
+      _ProfileOverviewPageState();
 }
 
-class _ProfileOverviewPageState extends State<ProfileOverviewPage> {
-  Map<String, dynamic>? state;
-  String? error;
-
+class _ProfileOverviewPageState extends ConsumerState<ProfileOverviewPage> {
   @override
   void initState() {
     super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      final value = await widget.session.api.profileCompleteness();
-      if (mounted) setState(() => state = value);
-    } catch (exception) {
-      if (mounted) setState(() => error = ApiClient.errorMessage(exception));
-    }
-  }
-
-  void _edit() {
-    Navigator.of(context).pop();
-    widget.session.openProfile();
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => ref.read(profileControllerProvider(widget.session.api)).load(),
+    );
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('健康档案')),
-    body: state == null
-        ? Center(
-            child: error == null
-                ? const CircularProgressIndicator()
-                : Text(error!),
-          )
-        : ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              if (state!['planNeedsRecalculation'] == true)
-                Card(
-                  color: Theme.of(context).colorScheme.secondaryContainer,
-                  child: const ListTile(
-                    leading: Icon(Icons.refresh),
-                    title: Text('计划需要重新计算'),
-                    subtitle: Text('旧计划和历史仍会保留，确认新计划后才会切换。'),
+  Widget build(BuildContext context) {
+    final controller = ref.watch(profileControllerProvider(widget.session.api));
+    final state = controller.state;
+    return Scaffold(
+      appBar: AppBar(title: const Text('健康档案')),
+      body: state.data == null
+          ? Center(
+              child: state.error == null
+                  ? const CircularProgressIndicator()
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(state.error!),
+                        const SizedBox(height: 12),
+                        FilledButton(
+                          onPressed: controller.load,
+                          child: const Text('重试'),
+                        ),
+                      ],
+                    ),
+            )
+          : RefreshIndicator(
+              onRefresh: controller.load,
+              child: ListView(
+                padding: const EdgeInsets.all(AppSpacing.page),
+                children: [
+                  if (state.data!.planNeedsRecalculation) ...[
+                    Card(
+                      color: Theme.of(context).colorScheme.secondaryContainer,
+                      child: const ListTile(
+                        leading: Icon(Icons.refresh),
+                        title: Text('计划需要重新计算'),
+                        subtitle: Text('旧计划和历史仍会保留，确认新计划后才会切换。'),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.small),
+                  ],
+                  ...ProfileSection.values.map(
+                    (section) => Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.small),
+                      child: Card(
+                        child: ListTile(
+                          leading: Icon(_icon(section)),
+                          title: Text(section.title),
+                          subtitle: Text(_subtitle(section)),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => _open(section, controller),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              const SizedBox(height: 8),
-              ...const [
-                ('基本信息', '出生日期、性别、身高与代谢计算依据', Icons.badge_outlined),
-                ('身体测量', '体重、腰围与体脂率', Icons.monitor_weight_outlined),
-                ('生活方式', '活动水平、工作状态、睡眠与运动', Icons.directions_walk_outlined),
-                ('健康目标', '主要目标、目标体重与目标日期', Icons.flag_outlined),
-                ('饮食偏好', '饮食方式、过敏与禁忌', Icons.restaurant_menu_outlined),
-                ('风险评估', '更新后立即应用安全限制', Icons.health_and_safety_outlined),
-              ].map(
-                (section) => Card(
-                  child: ListTile(
-                    leading: Icon(section.$3),
-                    title: Text(section.$1),
-                    subtitle: Text(section.$2),
-                    trailing: const Text('编辑'),
-                    onTap: _edit,
-                  ),
-                ),
+                ],
               ),
-            ],
-          ),
-  );
+            ),
+    );
+  }
+
+  Future<void> _open(
+    ProfileSection section,
+    ProfileController controller,
+  ) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) =>
+            ProfileSectionPage(section: section, controller: controller),
+      ),
+    );
+    await controller.load();
+    await widget.session.refreshProfileState();
+  }
+
+  IconData _icon(ProfileSection section) => switch (section) {
+    ProfileSection.basic => Icons.badge_outlined,
+    ProfileSection.body => Icons.monitor_weight_outlined,
+    ProfileSection.lifestyle => Icons.directions_walk_outlined,
+    ProfileSection.goal => Icons.flag_outlined,
+    ProfileSection.preferences => Icons.restaurant_menu_outlined,
+    ProfileSection.risk => Icons.health_and_safety_outlined,
+  };
+
+  String _subtitle(ProfileSection section) => switch (section) {
+    ProfileSection.basic => '出生日期、性别与代谢计算依据',
+    ProfileSection.body => '身高、当前体重与测量历史',
+    ProfileSection.lifestyle => '活动、工作、睡眠与运动',
+    ProfileSection.goal => '减脂目标、目标体重与日期',
+    ProfileSection.preferences => '饮食方式、过敏与禁忌',
+    ProfileSection.risk => '更新后立即应用安全限制',
+  };
 }

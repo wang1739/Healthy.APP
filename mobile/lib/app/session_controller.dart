@@ -191,6 +191,11 @@ class SessionController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> refreshProfileState() async {
+    await _loadProfileState();
+    notifyListeners();
+  }
+
   Future<void> _loadProfileState() async {
     try {
       final data = await api.profileCompleteness();

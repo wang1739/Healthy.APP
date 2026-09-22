@@ -242,6 +242,38 @@ class ApiClient {
     return Map<String, dynamic>.from(response.data as Map);
   }
 
+  Future<Map<String, dynamic>> getProfileSections() async {
+    final response = await _authorized('GET', '/profile/sections');
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<Map<String, dynamic>> saveProfileSection(
+    String section,
+    Map<String, dynamic> data,
+  ) async {
+    final path = switch (section) {
+      'basic' => 'basic-info',
+      'body' => 'body-data',
+      'preferences' => 'dietary-preferences',
+      'goal' => 'health-goal',
+      'risk' => 'risk-info',
+      _ => section,
+    };
+    final response = await _authorized(
+      'PUT',
+      '/profile/sections/$path',
+      data: data,
+    );
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<List<Map<String, dynamic>>> getProfileMeasurements() async {
+    final response = await _authorized('GET', '/profile/measurements');
+    final data = response.data;
+    final items = data is List ? data : (data as Map?)?['items'] as List? ?? [];
+    return items.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+  }
+
   Future<void> saveProfile(Map<String, dynamic> data) async {
     await _authorized('PUT', '/profile', data: data);
   }
@@ -850,6 +882,16 @@ class ApiClient {
     'POST',
     '/plans/$id/recalculate',
     data: {'expectedVersion': expectedVersion},
+  );
+
+  Future<Map<String, dynamic>> confirmPlanRecalculation(
+    String id, {
+    required int expectedVersion,
+    required String previewId,
+  }) => _planRequest(
+    'POST',
+    '/plans/$id/recalculation/confirm',
+    data: {'expectedVersion': expectedVersion, 'previewId': previewId},
   );
 
   Future<Map<String, dynamic>> updatePlanTargets(
