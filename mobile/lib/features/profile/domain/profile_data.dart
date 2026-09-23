@@ -87,7 +87,7 @@ class ProfileData {
           json['planNeedsRecalculation'] == true ||
           json['plan_needs_recalculation'] == true,
       birthDate: _text(basic, 'birthDate', 'birth_date'),
-      sex: _text(basic, 'sex') ?? 'FEMALE',
+      sex: _text(basic, 'sex') ?? '',
       metabolicBasis: _text(basic, 'metabolicBasis', 'metabolic_basis'),
       heightCm: _number(body, 'heightCm', 'height_cm'),
       measurements: history is List
@@ -101,13 +101,15 @@ class ProfileData {
           : latest is Map
           ? [BodyMeasurement.fromJson(Map<String, dynamic>.from(latest))]
           : const [],
-      activityLevel:
-          _text(lifestyle, 'activityLevel', 'activity_level') ?? 'LIGHT',
-      workStyle: _text(lifestyle, 'workStyle', 'work_style') ?? 'SEDENTARY',
-      sleepHours: _number(lifestyle, 'sleepHours', 'sleep_hours') ?? 7.5,
-      exerciseDays:
-          _number(lifestyle, 'exerciseDays', 'exercise_days')?.round() ?? 3,
-      dietType: _text(preferences, 'dietType', 'diet_type') ?? 'BALANCED',
+      activityLevel: _text(lifestyle, 'activityLevel', 'activity_level') ?? '',
+      workStyle: _text(lifestyle, 'workStyle', 'work_style') ?? '',
+      sleepHours: _number(lifestyle, 'sleepHours', 'sleep_hours'),
+      exerciseDays: _number(
+        lifestyle,
+        'exerciseDays',
+        'exercise_days',
+      )?.round(),
+      dietType: _text(preferences, 'dietType', 'diet_type') ?? '',
       allergies: _strings(preferences['allergies']),
       avoidFoods: _strings(
         preferences['avoidFoods'] ?? preferences['avoid_foods'],
@@ -138,8 +140,8 @@ class ProfileData {
   final List<BodyMeasurement> measurements;
   final String activityLevel;
   final String workStyle;
-  final double sleepHours;
-  final int exerciseDays;
+  final double? sleepHours;
+  final int? exerciseDays;
   final String dietType;
   final List<String> allergies;
   final List<String> avoidFoods;
@@ -186,6 +188,10 @@ class ProfileData {
     'heightCm' => heightCm,
     'weightKg' => measurements.isEmpty ? null : measurements.first.weightKg,
     'activityLevel' => activityLevel,
+    'workStyle' => workStyle,
+    'sleepHours' => sleepHours,
+    'exerciseDays' => exerciseDays,
+    'dietType' => dietType,
     'goalType' => goalType,
     'targetWeightKg' => targetWeightKg,
     'targetDate' => targetDate,

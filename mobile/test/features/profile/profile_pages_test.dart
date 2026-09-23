@@ -11,6 +11,11 @@ class _ProfileApi extends ApiClient {
   final expectedVersions = <String, int>{};
   bool needsRecalculation = false;
   String goalType = 'FAT_LOSS';
+  String sex = 'FEMALE';
+  String activityLevel = 'LIGHT';
+  String workStyle = 'SEDENTARY';
+  int exerciseDays = 3;
+  String dietType = 'BALANCED';
 
   @override
   Future<Map<String, dynamic>> profileCompleteness() async => {
@@ -25,18 +30,18 @@ class _ProfileApi extends ApiClient {
     'planNeedsRecalculation': needsRecalculation,
     'basicInfo': {
       'birthDate': '1996-05-12',
-      'sex': 'FEMALE',
+      'sex': sex,
       'metabolicBasis': 'FEMALE',
     },
     'bodyData': {'heightCm': 165},
     'lifestyle': {
-      'activityLevel': 'LIGHT',
-      'workStyle': 'SEDENTARY',
+      'activityLevel': activityLevel,
+      'workStyle': workStyle,
       'sleepHours': 7.5,
-      'exerciseDays': 3,
+      'exerciseDays': exerciseDays,
     },
     'dietaryPreferences': {
-      'dietType': 'BALANCED',
+      'dietType': dietType,
       'allergies': '花生',
       'avoidFoods': '香菜',
     },
@@ -174,7 +179,21 @@ void main() {
     expect(api.saves, isEmpty);
   });
 
-  testWidgets('窄屏与 1.3 倍字体无布局异常', (tester) async {
+  testWidgets('未知枚举显示待选择且不会按伪造默认值保存', (tester) async {
+    final api = _ProfileApi()..sex = 'UNKNOWN_SEX';
+    await _pump(tester, api);
+    await tester.tap(find.text('基本信息'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('请选择'), findsOneWidget);
+    await tester.tap(find.text('保存基本信息'));
+    await tester.pump();
+
+    expect(find.text('请选择性别'), findsOneWidget);
+    expect(api.saves, isEmpty);
+  });
+
+  testWidgets('窄屏与 2.0 倍字体下六分区可进入且无布局异常', (tester) async {
     tester.view.physicalSize = const Size(320, 700);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -185,7 +204,10 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         child: MediaQuery(
-          data: const MediaQueryData(textScaler: TextScaler.linear(1.3)),
+          data: const MediaQueryData(
+            textScaler: TextScaler.linear(2),
+            disableAnimations: true,
+          ),
           child: MaterialApp(
             theme: AppTheme.light,
             home: ProfileOverviewPage(session: session),
@@ -196,5 +218,17 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(tester.takeException(), isNull);
+    for (final title in ['基本信息', '身体测量', '生活方式', '健康目标', '饮食偏好', '风险评估']) {
+      await tester.scrollUntilVisible(
+        find.text(title),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text(title));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+    }
   });
 }

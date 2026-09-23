@@ -26,8 +26,10 @@ class ProfileController extends ChangeNotifier {
 
   final ApiClient api;
   ProfileViewState state = const ProfileViewState(loading: true);
+  int _readGeneration = 0;
 
   Future<void> load() async {
+    final generation = ++_readGeneration;
     state = ProfileViewState(data: state.data, loading: true);
     notifyListeners();
     try {
@@ -35,6 +37,7 @@ class ProfileController extends ChangeNotifier {
         api.getProfileSections(),
         api.getProfileMeasurements(),
       ]);
+      if (generation != _readGeneration) return;
       final data = ProfileData.fromJson(values[0] as Map<String, dynamic>)
           .withMeasurements(
             (values[1] as List<Map<String, dynamic>>)
@@ -43,6 +46,7 @@ class ProfileController extends ChangeNotifier {
           );
       state = ProfileViewState(data: data);
     } catch (error) {
+      if (generation != _readGeneration) return;
       state = ProfileViewState(
         data: state.data,
         error: ApiClient.errorMessage(error),
@@ -57,6 +61,7 @@ class ProfileController extends ChangeNotifier {
   ) async {
     final current = state.data;
     if (current == null) return ProfileSaveResult.failed;
+    _readGeneration++;
     final validationError = _validationError(section, data, current);
     if (validationError != null) {
       state = ProfileViewState(
@@ -80,21 +85,33 @@ class ProfileController extends ChangeNotifier {
       final updated = fresh.withMeasurements(
         _mergeMeasurements(fresh.measurements, current.measurements),
       );
+      _readGeneration++;
       state = ProfileViewState(data: updated);
       notifyListeners();
       return criticalChanged && updated.planNeedsRecalculation
           ? ProfileSaveResult.recalculationRequired
           : ProfileSaveResult.saved;
     } catch (error) {
+      _readGeneration++;
       var refreshed = current;
       if (ApiClient.errorCode(error) == 'PROFILE_VERSION_CONFLICT') {
         try {
           final response = ProfileData.fromJson(await api.getProfileSections());
-          refreshed = response.withMeasurements(
-            _mergeMeasurements(response.measurements, current.measurements),
-          );
+          List<BodyMeasurement> measurements;
+          try {
+            measurements = (await api.getProfileMeasurements())
+                .map(BodyMeasurement.fromJson)
+                .toList();
+          } catch (_) {
+            measurements = _mergeMeasurements(
+              response.measurements,
+              current.measurements,
+            );
+          }
+          refreshed = response.withMeasurements(measurements);
         } catch (_) {}
       }
+      _readGeneration++;
       state = ProfileViewState(
         data: refreshed,
         error: ApiClient.errorMessage(error),
@@ -105,33 +122,15 @@ class ProfileController extends ChangeNotifier {
     }
   }
 
-  Future<ProfileSaveResult> addMeasurement(Map<String, dynamic> data) async {
-    state = ProfileViewState(data: state.data, saving: true, draft: data);
-    notifyListeners();
-    try {
-      await api.addMeasurement(data);
-      await load();
-      if (state.error != null) return ProfileSaveResult.failed;
-      return state.data?.planNeedsRecalculation == true
-          ? ProfileSaveResult.recalculationRequired
-          : ProfileSaveResult.saved;
-    } catch (error) {
-      state = ProfileViewState(
-        data: state.data,
-        error: ApiClient.errorMessage(error),
-        draft: data,
-      );
-      notifyListeners();
-      return ProfileSaveResult.failed;
-    }
-  }
+  Future<ProfileSaveResult> addMeasurement(Map<String, dynamic> data) =>
+      save('body', data);
 
   bool _criticalChanged(String section, Map<String, dynamic> draft) {
     final current = state.data;
     if (current == null) return false;
     final keys = switch (section) {
       'basic' => const ['birthDate', 'sex', 'metabolicBasis'],
-      'body' => const ['heightCm'],
+      'body' => const ['heightCm', 'weightKg'],
       'lifestyle' => const ['activityLevel'],
       'goal' => const ['goalType', 'targetWeightKg', 'targetDate'],
       _ => const <String>[],

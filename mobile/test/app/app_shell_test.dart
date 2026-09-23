@@ -113,6 +113,22 @@ class _TodayApi extends ApiClient {
   }) async => const [];
 }
 
+class _ProfileNavigationApi extends _TodayApi {
+  @override
+  Future<Map<String, dynamic>> getProfileSections() async => {
+    'profileVersion': 1,
+    'basicInfo': const {},
+    'bodyData': const {},
+    'lifestyle': const {},
+    'dietaryPreferences': const {},
+    'healthGoal': const {'goalType': 'FAT_LOSS'},
+    'riskInfo': const {'riskBlocked': true},
+  };
+
+  @override
+  Future<List<Map<String, dynamic>>> getProfileMeasurements() async => const [];
+}
+
 TaskNotificationScheduler _taskScheduler(_TodayApi api) =>
     TaskNotificationScheduler(
       api: api,
@@ -418,5 +434,37 @@ void main() {
       tester.widget<NavigationBar>(find.byType(NavigationBar)).destinations,
       hasLength(6),
     );
+  });
+
+  testWidgets('已建档风险用户从计划页进入六分区档案而非建档向导', (tester) async {
+    session = SessionController(_ProfileNavigationApi());
+    session.completeProfile(blocked: true);
+    session.consumePendingFeature();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          backendStatusProvider.overrideWith(
+            (ref) async => BackendStatus.connected,
+          ),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: AppShell(session: session),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('计划'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('返回修改档案'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('健康档案'), findsOneWidget);
+    for (final section in ['基本信息', '身体测量', '生活方式', '健康目标', '饮食偏好', '风险评估']) {
+      expect(find.text(section), findsOneWidget);
+    }
+    expect(find.text('基础资料'), findsNothing);
+    expect(session.stage, AppStage.home);
   });
 }

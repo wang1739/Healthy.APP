@@ -60,7 +60,7 @@ void main() {
     expect(profile.goalType, 'FAT_LOSS');
   });
 
-  test('兼容服务端下划线字段并为缺失值提供安全默认值', () {
+  test('兼容服务端下划线字段且缺失枚举不伪造真实值', () {
     final profile = ProfileData.fromJson({
       'birth_date': '1990-01-01',
       'height_cm': 180,
@@ -71,7 +71,30 @@ void main() {
     expect(profile.birthDate, '1990-01-01');
     expect(profile.heightCm, 180);
     expect(profile.activityLevel, 'MODERATE');
+    expect(profile.sex, isEmpty);
+    expect(profile.workStyle, isEmpty);
+    expect(profile.sleepHours, isNull);
+    expect(profile.exerciseDays, isNull);
+    expect(profile.dietType, isEmpty);
     expect(profile.measurements, isEmpty);
+  });
+
+  test('未知枚举原样解析并交给编辑页要求用户明确选择', () {
+    final profile = ProfileData.fromJson({
+      'basicInfo': {'sex': 'UNKNOWN_SEX'},
+      'lifestyle': {
+        'activityLevel': 'EXTREME',
+        'workStyle': 'REMOTE',
+        'exerciseDays': 9,
+      },
+      'dietaryPreferences': {'dietType': 'KETO'},
+    });
+
+    expect(profile.sex, 'UNKNOWN_SEX');
+    expect(profile.activityLevel, 'EXTREME');
+    expect(profile.workStyle, 'REMOTE');
+    expect(profile.exerciseDays, 9);
+    expect(profile.dietType, 'KETO');
   });
 
   test('解析分区接口的真实字段结构', () {
