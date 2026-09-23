@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:healthy/core/api/api_client.dart';
@@ -41,6 +43,10 @@ class _FakeApi extends ApiClient {
   bool fail = false;
   bool conflict = false;
   int reads = 0;
+  int measurementReads = 0;
+  List<Map<String, dynamic>> measurements = [
+    {'id': 'm1', 'weightKg': 62.5, 'measuredAt': '2026-09-20T08:00:00Z'},
+  ];
 
   @override
   Future<Map<String, dynamic>> getProfileSections() async {
@@ -82,18 +88,53 @@ class _FakeApi extends ApiClient {
         ),
       );
     }
+    final latestMeasurement = section == 'body' && data['weightKg'] != null
+        ? {'id': 'm2', ...data, 'measuredAt': '2026-09-22T08:00:00Z'}
+        : null;
+    if (latestMeasurement != null) {
+      measurements = [latestMeasurement, ...measurements];
+    }
     profile = {
       ...profile,
       'profileVersion': expectedVersion + 1,
-      'planNeedsRecalculation': section == 'basic',
+      'planNeedsRecalculation':
+          profile['planNeedsRecalculation'] == true ||
+          section == 'basic' ||
+          latestMeasurement != null,
+      if (section == 'basic')
+        'basicInfo': {
+          ...Map<String, dynamic>.from(profile['basicInfo'] as Map),
+          ...data,
+        },
+      if (section == 'body')
+        'bodyData': {
+          ...Map<String, dynamic>.from(profile['bodyData'] as Map),
+          if (data['heightCm'] != null) 'heightCm': data['heightCm'],
+          'latestMeasurement': ?latestMeasurement,
+        },
     };
     return profile;
   }
 
   @override
-  Future<List<Map<String, dynamic>>> getProfileMeasurements() async => [
-    {'id': 'm1', 'weightKg': 62.5, 'measuredAt': '2026-09-20T08:00:00Z'},
-  ];
+  Future<List<Map<String, dynamic>>> getProfileMeasurements() async {
+    measurementReads++;
+    return measurements;
+  }
+}
+
+class _DelayedReadApi extends _FakeApi {
+  Completer<Map<String, dynamic>>? delayedSections;
+
+  @override
+  Future<Map<String, dynamic>> getProfileSections() {
+    final delayed = delayedSections;
+    if (delayed != null) {
+      reads++;
+      return delayed.future;
+    }
+    return super.getProfileSections();
+  }
 }
 
 void main() {
@@ -143,6 +184,25 @@ void main() {
     expect(api.reads, 1);
   });
 
+  test('新增测量复用身体分区版本写入并直接合并权威响应', () async {
+    final api = _FakeApi();
+    final controller = ProfileController(api);
+    await controller.load();
+
+    final result = await controller.addMeasurement({
+      'weightKg': 61.8,
+      'waistCm': 71,
+    });
+
+    expect(result, ProfileSaveResult.recalculationRequired);
+    expect(api.savedSection, 'body');
+    expect(api.savedExpectedVersion, 7);
+    expect(api.reads, 1);
+    expect(controller.state.data!.profileVersion, 8);
+    expect(controller.state.data!.measurements.first.id, 'm2');
+    expect(controller.state.data!.measurements.first.weightKg, 61.8);
+  });
+
   test('风险字段缺失和非减脂目标不会发出写请求', () async {
     final api = _FakeApi();
     final controller = ProfileController(api);
@@ -189,5 +249,47 @@ void main() {
     expect(controller.state.data!.birthDate, '1994-04-11');
     expect(controller.state.draft, draft);
     expect(controller.state.error, '健康档案已更新，请刷新后重试');
+  });
+
+  test('版本冲突重新读取完整测量历史', () async {
+    final api = _FakeApi()..conflict = true;
+    final controller = ProfileController(api);
+    await controller.load();
+    api.measurements = [
+      {'id': 'm3', 'weightKg': 61.5, 'measuredAt': '2026-09-22T08:00:00Z'},
+      {'id': 'm2', 'weightKg': 62, 'measuredAt': '2026-09-21T08:00:00Z'},
+      ...api.measurements,
+    ];
+
+    await controller.save('basic', {'birthDate': '1995-05-12'});
+
+    expect(controller.state.data!.measurements.map((item) => item.id), [
+      'm3',
+      'm2',
+      'm1',
+    ]);
+    expect(api.measurementReads, 2);
+  });
+
+  test('保存成功后丢弃更早开始的旧档案读取', () async {
+    final api = _DelayedReadApi();
+    final controller = ProfileController(api);
+    await controller.load();
+    final stale = {
+      ...api.profile,
+      'basicInfo': {
+        ...Map<String, dynamic>.from(api.profile['basicInfo'] as Map),
+      },
+    };
+    api.delayedSections = Completer<Map<String, dynamic>>();
+
+    final oldRead = controller.load();
+    await Future<void>.delayed(Duration.zero);
+    await controller.save('basic', {'birthDate': '1995-05-12'});
+    api.delayedSections!.complete(stale);
+    await oldRead;
+
+    expect(controller.state.data!.profileVersion, 8);
+    expect(controller.state.data!.birthDate, '1995-05-12');
   });
 }

@@ -43,12 +43,17 @@ Map<String, dynamic> _plan({
 }
 
 class _FakePlanApi extends ApiClient {
-  _FakePlanApi(this.current, {this.preview, this.previewErrorCode})
-    : super(dio: Dio());
+  _FakePlanApi(
+    this.current, {
+    this.preview,
+    this.previewErrorCode,
+    this.recalculationErrorCode,
+  }) : super(dio: Dio());
 
   Map<String, dynamic> current;
   Map<String, dynamic>? preview;
   String? previewErrorCode;
+  String? recalculationErrorCode;
   bool fail = false;
   int confirmed = 0;
   int previewed = 0;
@@ -59,6 +64,7 @@ class _FakePlanApi extends ApiClient {
   int currentReads = 0;
   int? confirmedExpectedVersion;
   String? confirmedPreviewId;
+  Map<String, dynamic>? confirmedAdjustments;
   bool confirmConflict = false;
   Completer<List<Map<String, dynamic>>>? historyResult;
 
@@ -91,6 +97,9 @@ class _FakePlanApi extends ApiClient {
     Map<String, dynamic>? adjustments,
   }) async {
     confirmed++;
+    confirmedAdjustments = adjustments == null
+        ? null
+        : Map<String, dynamic>.from(adjustments);
     return current = _plan();
   }
 
@@ -100,6 +109,22 @@ class _FakePlanApi extends ApiClient {
     required int expectedVersion,
   }) async {
     previewed++;
+    if (recalculationErrorCode != null) {
+      final request = RequestOptions();
+      throw DioException(
+        requestOptions: request,
+        response: Response(
+          requestOptions: request,
+          statusCode: 422,
+          data: {
+            'code': recalculationErrorCode,
+            'message': recalculationErrorCode == 'PLAN_RISK_BLOCKED'
+                ? '当前健康风险不适合生成普通减脂计划'
+                : '当前目标的个性计划尚未开放',
+          },
+        ),
+      );
+    }
     return {
       'state': 'RECALCULATION_PREVIEW',
       'planId': id,
@@ -179,21 +204,31 @@ Future<void> _pump(
   _FakePlanApi api, {
   bool autoPreview = false,
   VoidCallback? onConfirmed,
+  double width = 800,
+  double textScale = 1,
 }) async {
+  await tester.binding.setSurfaceSize(Size(width, 900));
+  addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(
     ProviderScope(
       child: MaterialApp(
         theme: AppTheme.light,
-        home: Scaffold(
-          body: PlanPage(
-            key: ValueKey(api),
-            api: api,
-            access: UserAccess.profileComplete,
-            riskBlocked: false,
-            autoPreview: autoPreview,
-            onProtectedAction: (_) {},
-            onConfirmed: onConfirmed ?? () {},
-            onEditProfile: () {},
+        home: MediaQuery(
+          data: MediaQueryData(
+            size: Size(width, 900),
+            textScaler: TextScaler.linear(textScale),
+          ),
+          child: Scaffold(
+            body: PlanPage(
+              key: ValueKey(api),
+              api: api,
+              access: UserAccess.profileComplete,
+              riskBlocked: false,
+              autoPreview: autoPreview,
+              onProtectedAction: (_) {},
+              onConfirmed: onConfirmed ?? () {},
+              onEditProfile: () {},
+            ),
           ),
         ),
       ),
@@ -274,6 +309,28 @@ void main() {
     expect(controller.state.recalculationPreview, isFalse);
     expect(controller.state.data!.kind, PlanKind.paused);
     expect(controller.state.error, '健康档案已更新，请重新生成计划预览');
+  });
+
+  test('重算失败切换到风险或未开放专用状态且不泄露旧目标', () async {
+    for (final entry in {
+      'PLAN_RISK_BLOCKED': PlanKind.risk,
+      'PLAN_GOAL_UNSUPPORTED': PlanKind.unsupported,
+    }.entries) {
+      final api = _FakePlanApi(
+        _plan(needsRecalculation: true),
+        recalculationErrorCode: entry.key,
+      );
+      final controller = PlanController(api);
+      await controller.load();
+
+      final ok = await controller.prepareRecalculation();
+
+      expect(ok, isFalse);
+      expect(controller.state.data!.kind, entry.value);
+      expect(controller.state.data!.raw, isEmpty);
+      expect(controller.state.data!.targetKcal, 0);
+      expect(controller.state.error, isNull);
+    }
   });
 
   testWidgets('无计划时提供生成入口', (tester) async {
@@ -407,7 +464,7 @@ void main() {
     expect(api.recalculated, 0);
     expect(find.text('新计划预览'), findsOneWidget);
     expect(find.textContaining('1700 → 1600'), findsOneWidget);
-    await _tapVisible(tester, '取消');
+    await _tapVisible(tester, '暂不采用');
     expect(find.text('需要重新计算'), findsOneWidget);
     expect(find.text('1700'), findsOneWidget);
     expect(api.recalculated, 0);
@@ -415,6 +472,94 @@ void main() {
     await _tapVisible(tester, '重新计算');
     await _tapVisible(tester, '确认使用新计划');
     expect(api.recalculated, 1);
+  });
+
+  testWidgets('首次预览显示暂不采用且 Android 返回会重新加载当前计划', (tester) async {
+    final api = _FakePlanApi({
+      'status': 'EMPTY',
+    }, preview: _plan(status: 'PREVIEW'));
+    await _pump(tester, api, autoPreview: true);
+    expect(find.text('暂不采用'), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.text('计划预览'), findsNothing);
+    expect(find.text('还没有减脂计划'), findsOneWidget);
+    expect(api.currentReads, 2);
+  });
+
+  testWidgets('重算预览时 Android 返回等同取消', (tester) async {
+    final api = _FakePlanApi(
+      _plan(needsRecalculation: true),
+      preview: {
+        ..._plan(status: 'PREVIEW'),
+        'targetKcal': 1600,
+      },
+    );
+    await _pump(tester, api);
+    await _tapVisible(tester, '重新计算');
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.text('新计划预览'), findsNothing);
+    expect(find.text('需要重新计算'), findsOneWidget);
+    expect(find.text('1700'), findsOneWidget);
+    expect(api.recalculated, 0);
+  });
+
+  testWidgets('320 和 360 宽度配合 2.0 字体时摘要与目标不溢出', (tester) async {
+    for (final width in [320.0, 360.0]) {
+      await _pump(tester, _FakePlanApi(_plan()), width: width, textScale: 2);
+      expect(find.text('每日目标热量'), findsOneWidget);
+      expect(find.text('运动'), findsOneWidget);
+      expect(tester.takeException(), isNull, reason: '宽度 $width');
+    }
+  });
+
+  testWidgets('历史版本弹层可滚动并显示本地中文日期和 6px 顶部圆角', (tester) async {
+    final api = _FakePlanApi(_plan());
+    api.historyResult = Completer<List<Map<String, dynamic>>>()
+      ..complete(
+        List.generate(
+          20,
+          (index) => {'version': index + 1, 'createdAt': '2026-09-01T08:05:00'},
+        ),
+      );
+    await _pump(tester, api, width: 320, textScale: 2);
+
+    await _tapVisible(tester, '查看历史版本');
+
+    expect(find.text('2026年9月1日 08:05'), findsWidgets);
+    final sheet = tester.widget<BottomSheet>(find.byType(BottomSheet));
+    final shape = sheet.shape! as RoundedRectangleBorder;
+    expect(shape.borderRadius.resolve(TextDirection.ltr).topLeft.x, 6);
+    await tester.scrollUntilVisible(
+      find.text('版本 20'),
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
+    expect(find.text('版本 20'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('刷新并重新生成预览不会复用旧调整', (tester) async {
+    final api = _FakePlanApi({'status': 'EMPTY'});
+    await _pump(tester, api);
+    await _tapVisible(tester, '生成减脂计划');
+    await _tapVisible(tester, '调整目标');
+    await tester.tap(find.text('保存调整'));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byTooltip('刷新计划'));
+    await tester.tap(find.byTooltip('刷新计划'));
+    await tester.pumpAndSettle();
+    await _tapVisible(tester, '生成减脂计划');
+    await _tapVisible(tester, '确认采用计划');
+
+    expect(api.confirmed, 1);
+    expect(api.confirmedAdjustments, isNull);
   });
 
   testWidgets('确认、暂停和恢复调用计划接口', (tester) async {

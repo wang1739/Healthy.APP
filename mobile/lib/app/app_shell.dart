@@ -9,6 +9,7 @@ import 'package:healthy/features/hydration/presentation/hydration_page.dart';
 import 'package:healthy/features/hydration/application/hydration_reminder_scheduler.dart';
 import 'package:healthy/features/plan/presentation/plan_page.dart';
 import 'package:healthy/features/plan/application/plan_controller.dart';
+import 'package:healthy/features/profile/presentation/profile_overview_page.dart';
 import 'package:healthy/features/report/presentation/report_page.dart';
 import 'package:healthy/features/report/domain/report_data.dart';
 import 'package:healthy/features/today/presentation/today_page.dart';
@@ -285,6 +286,20 @@ class _AppShellState extends ConsumerState<AppShell>
     }
   }
 
+  void _editProfileFromPlan() {
+    if (widget.session.access != UserAccess.profileComplete) {
+      widget.session.openProfile();
+      return;
+    }
+    unawaited(
+      Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => ProfileOverviewPage(session: widget.session),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = [
@@ -329,7 +344,7 @@ class _AppShellState extends ConsumerState<AppShell>
         sessionRevision: widget.session.sessionRevision,
         onProtectedAction: (label) => _requestFeature(label, 2),
         onConfirmed: () => setState(() => _index = 0),
-        onEditProfile: widget.session.openProfile,
+        onEditProfile: _editProfileFromPlan,
       ),
       ReportPage(
         api: widget.session.api,

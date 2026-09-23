@@ -33,7 +33,7 @@ class _ProfileSectionPageState extends State<ProfileSectionPage> {
   String? _metabolicBasis;
   late String _activityLevel;
   late String _workStyle;
-  late int _exerciseDays;
+  late int? _exerciseDays;
   late String _dietType;
   late bool _pregnant;
   late bool _breastfeeding;
@@ -59,12 +59,32 @@ class _ProfileSectionPageState extends State<ProfileSectionPage> {
     _avoidFoods = TextEditingController(text: data.avoidFoods.join('、'));
     _targetWeight = TextEditingController(text: _display(data.targetWeightKg));
     _targetDate = TextEditingController(text: data.targetDate);
-    _sex = data.sex;
-    _metabolicBasis = data.metabolicBasis;
-    _activityLevel = data.activityLevel;
-    _workStyle = data.workStyle;
-    _exerciseDays = data.exerciseDays;
-    _dietType = data.dietType;
+    _sex = const {'FEMALE', 'MALE', 'OTHER'}.contains(data.sex) ? data.sex : '';
+    _metabolicBasis = const {'FEMALE', 'MALE'}.contains(data.metabolicBasis)
+        ? data.metabolicBasis
+        : null;
+    _activityLevel =
+        const {'LOW', 'LIGHT', 'MODERATE', 'HIGH'}.contains(data.activityLevel)
+        ? data.activityLevel
+        : '';
+    _workStyle = const {'SEDENTARY', 'MIXED', 'ACTIVE'}.contains(data.workStyle)
+        ? data.workStyle
+        : '';
+    _exerciseDays =
+        data.exerciseDays != null &&
+            data.exerciseDays! >= 0 &&
+            data.exerciseDays! <= 7
+        ? data.exerciseDays
+        : null;
+    _dietType =
+        const {
+          'BALANCED',
+          'VEGETARIAN',
+          'LOW_CARB',
+          'HIGH_PROTEIN',
+        }.contains(data.dietType)
+        ? data.dietType
+        : '';
     _pregnant = data.pregnant;
     _breastfeeding = data.breastfeeding;
     _eatingDisorderRisk = data.eatingDisorderRisk;
@@ -142,7 +162,7 @@ class _ProfileSectionPageState extends State<ProfileSectionPage> {
         const SizedBox(height: 14),
         _select(
           label: '代谢计算依据',
-          value: _metabolicBasis ?? 'FEMALE',
+          value: _metabolicBasis ?? '',
           values: const {'FEMALE': '女性公式', 'MALE': '男性公式'},
           onChanged: (value) => setState(() => _metabolicBasis = value),
         ),
@@ -226,7 +246,7 @@ class _ProfileSectionPageState extends State<ProfileSectionPage> {
       const SizedBox(height: 14),
       _select(
         label: '每周运动天数',
-        value: '$_exerciseDays',
+        value: _exerciseDays?.toString() ?? '',
         values: {for (var day = 0; day <= 7; day++) '$day': '$day 天'},
         onChanged: (value) => setState(() => _exerciseDays = int.parse(value)),
       ),
@@ -339,7 +359,8 @@ class _ProfileSectionPageState extends State<ProfileSectionPage> {
     required Map<String, String> values,
     required ValueChanged<String> onChanged,
   }) => DropdownButtonFormField<String>(
-    initialValue: values.containsKey(value) ? value : values.keys.first,
+    initialValue: values.containsKey(value) ? value : null,
+    hint: const Text('请选择'),
     isExpanded: true,
     decoration: InputDecoration(labelText: label),
     items: values.entries
@@ -407,18 +428,22 @@ class _ProfileSectionPageState extends State<ProfileSectionPage> {
       payload = switch (widget.section) {
         ProfileSection.basic => {
           'birthDate': _required(_birthDate, '请选择出生日期'),
-          'sex': _sex,
-          'metabolicBasis': _sex == 'OTHER' ? _metabolicBasis : _sex,
+          'sex': _requiredChoice(_sex, '请选择性别'),
+          'metabolicBasis': _sex == 'OTHER'
+              ? _requiredChoice(_metabolicBasis, '请选择代谢计算依据')
+              : _sex,
         },
         ProfileSection.body => {'heightCm': _requiredNumber(_height, '请输入身高')},
         ProfileSection.lifestyle => {
-          'activityLevel': _activityLevel,
-          'workStyle': _workStyle,
+          'activityLevel': _requiredChoice(_activityLevel, '请选择日常活动量'),
+          'workStyle': _requiredChoice(_workStyle, '请选择工作状态'),
           'sleepHours': _requiredNumber(_sleep, '请输入睡眠时长'),
-          'exerciseDays': _exerciseDays,
+          'exerciseDays': int.parse(
+            _requiredChoice(_exerciseDays?.toString(), '请选择每周运动天数'),
+          ),
         },
         ProfileSection.preferences => {
-          'dietType': _dietType,
+          'dietType': _requiredChoice(_dietType, '请选择饮食方式'),
           'allergies': _allergies.text.trim(),
           'avoidFoods': _avoidFoods.text.trim(),
         },
@@ -498,6 +523,11 @@ class _ProfileSectionPageState extends State<ProfileSectionPage> {
   String _required(TextEditingController controller, String message) {
     final value = controller.text.trim();
     if (value.isEmpty) throw FormatException(message);
+    return value;
+  }
+
+  String _requiredChoice(String? value, String message) {
+    if (value == null || value.isEmpty) throw FormatException(message);
     return value;
   }
 

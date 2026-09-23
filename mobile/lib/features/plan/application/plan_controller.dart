@@ -268,6 +268,7 @@ class PlanController extends ChangeNotifier {
     PlanData fallback,
     int operation,
   ) async {
+    final code = ApiClient.errorCode(error);
     final message = ApiClient.errorMessage(error);
     try {
       await api.getProfileSections();
@@ -277,7 +278,16 @@ class PlanController extends ChangeNotifier {
       current = PlanData.fromJson(await api.getCurrentPlan());
     } catch (_) {}
     if (operation != _operation) return;
-    state = PlanViewState(data: current ?? fallback, error: message);
+    final blockedKind = switch (code) {
+      'PLAN_RISK_BLOCKED' => PlanKind.risk,
+      'PLAN_GOAL_UNSUPPORTED' => PlanKind.unsupported,
+      _ => null,
+    };
+    state = blockedKind == null
+        ? PlanViewState(data: current ?? fallback, error: message)
+        : PlanViewState(
+            data: PlanData(raw: const {}, kind: blockedKind, message: message),
+          );
     notifyListeners();
   }
 

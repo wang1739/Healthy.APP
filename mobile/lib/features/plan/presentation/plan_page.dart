@@ -78,41 +78,53 @@ class _PlanPageState extends ConsumerState<PlanPage> {
     }
     if (data == null) return _networkFailure(controller);
 
-    return SafeArea(
-      child: RefreshIndicator(
-        onRefresh: controller.load,
-        child: ListView(
-          padding: const EdgeInsets.all(AppSpacing.page),
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '减脂计划',
-                    style: Theme.of(context).textTheme.headlineMedium,
+    return PopScope<void>(
+      canPop: data.kind != PlanKind.preview,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && data.kind == PlanKind.preview) {
+          if (state.recalculationPreview) {
+            _cancelRecalculation(controller);
+          } else {
+            _reload(controller);
+          }
+        }
+      },
+      child: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: () => _reload(controller),
+          child: ListView(
+            padding: const EdgeInsets.all(AppSpacing.page),
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '减脂计划',
+                      style: Theme.of(context).textTheme.headlineMedium,
+                    ),
                   ),
-                ),
-                IconButton(
-                  tooltip: '刷新计划',
-                  onPressed: state.loading ? null : controller.load,
-                  icon: const Icon(Icons.refresh),
-                ),
+                  IconButton(
+                    tooltip: '刷新计划',
+                    onPressed: state.loading ? null : () => _reload(controller),
+                    icon: const Icon(Icons.refresh),
+                  ),
+                ],
+              ),
+              if (state.error != null) ...[
+                const SizedBox(height: AppSpacing.small),
+                _errorBanner(controller),
               ],
-            ),
-            if (state.error != null) ...[
-              const SizedBox(height: AppSpacing.small),
-              _errorBanner(controller),
+              const SizedBox(height: AppSpacing.medium),
+              if (data.kind == PlanKind.noPlan)
+                _empty(controller)
+              else if (data.kind == PlanKind.risk)
+                _risk(message: data.message)
+              else if (data.kind == PlanKind.unsupported)
+                _unsupported(data)
+              else
+                _plan(data, controller, state),
             ],
-            const SizedBox(height: AppSpacing.medium),
-            if (data.kind == PlanKind.noPlan)
-              _empty(controller)
-            else if (data.kind == PlanKind.risk)
-              _risk(message: data.message)
-            else if (data.kind == PlanKind.unsupported)
-              _unsupported(data)
-            else
-              _plan(data, controller, state),
-          ],
+          ),
         ),
       ),
     );
@@ -156,7 +168,10 @@ class _PlanPageState extends ConsumerState<PlanPage> {
             const SizedBox(height: 8),
             const Text('网络连接失败，请稍后重试'),
             const SizedBox(height: 20),
-            FilledButton(onPressed: controller.load, child: const Text('重试')),
+            FilledButton(
+              onPressed: () => _reload(controller),
+              child: const Text('重试'),
+            ),
           ],
         ),
       ),
@@ -181,7 +196,10 @@ class _PlanPageState extends ConsumerState<PlanPage> {
                 : controller.state.error!,
           ),
         ),
-        TextButton(onPressed: controller.load, child: const Text('重试')),
+        TextButton(
+          onPressed: () => _reload(controller),
+          child: const Text('重试'),
+        ),
       ],
     ),
   );
@@ -201,7 +219,9 @@ class _PlanPageState extends ConsumerState<PlanPage> {
         const Text('根据你的档案生成每日热量、营养、饮水、运动和睡眠目标。', textAlign: TextAlign.center),
         const SizedBox(height: 20),
         FilledButton(
-          onPressed: controller.state.loading ? null : controller.generate,
+          onPressed: controller.state.loading
+              ? null
+              : () => _generate(controller),
           child: const Text('生成减脂计划'),
         ),
       ],
@@ -254,6 +274,9 @@ class _PlanPageState extends ConsumerState<PlanPage> {
 
   Widget _plan(PlanData data, PlanController controller, PlanViewState state) {
     final loading = state.loading;
+    final useStackedLayout =
+        MediaQuery.sizeOf(context).width <= 360 ||
+        MediaQuery.textScalerOf(context).scale(1) > 1.3;
     final title = state.recalculationPreview
         ? '新计划预览'
         : data.kind == PlanKind.preview
@@ -296,45 +319,81 @@ class _PlanPageState extends ConsumerState<PlanPage> {
             color: AppColors.green,
             borderRadius: BorderRadius.circular(6),
           ),
-          child: Row(
-            children: [
-              Expanded(
-                child: _summaryValue('${data.targetKcal}', '每日目标热量', 'kcal'),
-              ),
-              Expanded(
-                child: _summaryValue(
-                  data.expectedWeeklyChangeKg.toStringAsFixed(2),
-                  '预计每周减重',
-                  'kg',
+          child: useStackedLayout
+              ? Column(
+                  children: [
+                    _summaryValue('${data.targetKcal}', '每日目标热量', 'kcal'),
+                    const Divider(height: 24, color: Colors.white24),
+                    _summaryValue(
+                      data.expectedWeeklyChangeKg.toStringAsFixed(2),
+                      '预计每周减重',
+                      'kg',
+                    ),
+                    const Divider(height: 24, color: Colors.white24),
+                    _summaryValue('4', '执行阶段', '周'),
+                  ],
+                )
+              : Row(
+                  children: [
+                    Expanded(
+                      child: _summaryValue(
+                        '${data.targetKcal}',
+                        '每日目标热量',
+                        'kcal',
+                      ),
+                    ),
+                    Expanded(
+                      child: _summaryValue(
+                        data.expectedWeeklyChangeKg.toStringAsFixed(2),
+                        '预计每周减重',
+                        'kg',
+                      ),
+                    ),
+                    Expanded(child: _summaryValue('4', '执行阶段', '周')),
+                  ],
                 ),
-              ),
-              Expanded(child: _summaryValue('4', '执行阶段', '周')),
-            ],
-          ),
         ),
         const SizedBox(height: 14),
-        GridView.count(
-          crossAxisCount: MediaQuery.sizeOf(context).width >= 600 ? 4 : 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
-          childAspectRatio: 1.7,
-          children: [
-            _target('蛋白质', '${data.proteinG} g', Icons.egg_alt_outlined),
-            _target('饮水', '${data.waterMl} ml', Icons.water_drop_outlined),
-            _target(
-              '运动',
-              '${data.exerciseDays} 天 / ${data.exerciseMinutes} 分钟',
-              Icons.directions_run,
-            ),
-            _target(
-              '睡眠',
-              '${data.sleepHours.toStringAsFixed(1)} 小时',
-              Icons.bedtime_outlined,
-            ),
-          ],
-        ),
+        if (useStackedLayout)
+          Column(
+            children: [
+              _target('蛋白质', '${data.proteinG} g', Icons.egg_alt_outlined),
+              _target('饮水', '${data.waterMl} ml', Icons.water_drop_outlined),
+              _target(
+                '运动',
+                '${data.exerciseDays} 天 / ${data.exerciseMinutes} 分钟',
+                Icons.directions_run,
+              ),
+              _target(
+                '睡眠',
+                '${data.sleepHours.toStringAsFixed(1)} 小时',
+                Icons.bedtime_outlined,
+              ),
+            ],
+          )
+        else
+          GridView.count(
+            crossAxisCount: MediaQuery.sizeOf(context).width >= 600 ? 4 : 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: 1.7,
+            children: [
+              _target('蛋白质', '${data.proteinG} g', Icons.egg_alt_outlined),
+              _target('饮水', '${data.waterMl} ml', Icons.water_drop_outlined),
+              _target(
+                '运动',
+                '${data.exerciseDays} 天 / ${data.exerciseMinutes} 分钟',
+                Icons.directions_run,
+              ),
+              _target(
+                '睡眠',
+                '${data.sleepHours.toStringAsFixed(1)} 小时',
+                Icons.bedtime_outlined,
+              ),
+            ],
+          ),
         const SizedBox(height: 14),
         _card(
           padding: EdgeInsets.zero,
@@ -391,10 +450,14 @@ class _PlanPageState extends ConsumerState<PlanPage> {
           ),
         ),
         const SizedBox(height: 8),
-        if (state.recalculationPreview)
+        if (data.kind == PlanKind.preview)
           OutlinedButton(
-            onPressed: loading ? null : controller.cancelRecalculation,
-            child: const Text('取消'),
+            onPressed: loading
+                ? null
+                : state.recalculationPreview
+                ? () => _cancelRecalculation(controller)
+                : () => _reload(controller),
+            child: const Text('暂不采用'),
           ),
         if (data.kind != PlanKind.paused) ...[
           if (!state.recalculationPreview)
@@ -417,15 +480,33 @@ class _PlanPageState extends ConsumerState<PlanPage> {
     );
   }
 
+  Future<void> _reload(PlanController controller) async {
+    _previewAdjustments = null;
+    await controller.load();
+  }
+
+  Future<void> _generate(PlanController controller) async {
+    _previewAdjustments = null;
+    await controller.generate();
+  }
+
+  void _cancelRecalculation(PlanController controller) {
+    _previewAdjustments = null;
+    controller.cancelRecalculation();
+  }
+
   Future<void> _primary(PlanData data, PlanController controller) async {
     if (controller.state.recalculationPreview) {
       await _feedback(controller.confirmRecalculation(), '新计划已生效');
+      if (!controller.state.recalculationPreview) _previewAdjustments = null;
     } else if (data.kind == PlanKind.preview) {
       final ok = await controller.confirm(_previewAdjustments);
+      if (ok) _previewAdjustments = null;
       if (ok && mounted) widget.onConfirmed();
     } else if (data.kind == PlanKind.paused) {
       await _feedback(controller.resume(), '计划已恢复');
     } else if (data.needsRecalculation) {
+      _previewAdjustments = null;
       await controller.prepareRecalculation();
     } else {
       widget.onConfirmed();
@@ -513,12 +594,15 @@ class _PlanPageState extends ConsumerState<PlanPage> {
       await showModalBottomSheet<void>(
         context: context,
         showDragHandle: true,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(6)),
+        ),
         builder: (context) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+          child: FractionallySizedBox(
+            heightFactor: .8,
+            child: ListView(
+              padding: const EdgeInsets.all(20),
               children: [
                 Text('历史版本', style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 12),
@@ -531,9 +615,7 @@ class _PlanPageState extends ConsumerState<PlanPage> {
                       title: Text(
                         '版本 ${item['version'] ?? item['versionNumber'] ?? '-'}',
                       ),
-                      subtitle: Text(
-                        item['createdAt']?.toString() ?? '保存的计划版本',
-                      ),
+                      subtitle: Text(_historyDate(item['createdAt'])),
                     ),
                   ),
               ],
@@ -639,6 +721,16 @@ class _PlanPageState extends ConsumerState<PlanPage> {
 
   String _date(String value) =>
       value.length >= 10 ? value.substring(0, 10) : value;
+
+  String _historyDate(Object? value) {
+    if (value == null) return '保存的计划版本';
+    final parsed = DateTime.tryParse(value.toString());
+    if (parsed == null) return value.toString();
+    final local = parsed.toLocal();
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '${local.year}年${local.month}月${local.day}日 $hour:$minute';
+  }
 }
 
 String _ruleVersionLabel(String value) => switch (value) {
