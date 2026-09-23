@@ -271,12 +271,18 @@ public class HealthDataDeletionService {
     }
 
     private void deleteTasks(String userId, LocalDate from, LocalDate to) {
+        if (from == null && to == null) {
+            jdbc.update("DELETE FROM task_notification_events WHERE user_id=?", userId);
+            jdbc.update("DELETE FROM task_operation_keys WHERE user_id=?", userId);
+            jdbc.update("DELETE FROM task_instances WHERE user_id=?", userId);
+            jdbc.update("DELETE FROM task_templates WHERE user_id=?", userId);
+            return;
+        }
         String selected = "SELECT id FROM task_instances WHERE user_id=?" + rangeClause("original_local_date", from, to);
         Object[] parameters = params(userId, from, to);
         jdbc.update("DELETE FROM task_notification_events WHERE task_instance_id IN (" + selected + ")", parameters);
         jdbc.update("DELETE FROM task_operation_keys WHERE instance_id IN (" + selected + ")", parameters);
         jdbc.update("DELETE FROM task_instances WHERE user_id=?" + rangeClause("original_local_date", from, to), parameters);
-        if (from == null && to == null) jdbc.update("DELETE FROM task_templates WHERE user_id=?", userId);
     }
 
     private void deletePlans(String userId, LocalDate from, LocalDate to) {

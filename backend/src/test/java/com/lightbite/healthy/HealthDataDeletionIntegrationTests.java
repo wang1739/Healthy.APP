@@ -145,6 +145,20 @@ class HealthDataDeletionIntegrationTests {
     }
 
     @Test
+    void fullTaskDeletionRemovesUnboundNotificationEvents() throws Exception {
+        jdbc.update("INSERT INTO task_notification_events "
+                + "(id,user_id,task_instance_id,device_key_hash,event_type,idempotency_key) "
+                + "VALUES ('unbound-task-event',?,NULL,'device','OPENED','unbound-task-event')", USER);
+
+        mockMvc.perform(post("/api/v1/health-data-deletion").with(user(USER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dataTypes\":[\"TASKS\"],\"code\":\"%s\"}".formatted(verificationCode())))
+                .andExpect(status().isOk());
+
+        assertThat(count("task_notification_events", "id='unbound-task-event'")).isZero();
+    }
+
+    @Test
     void deletingTheLastActiveVersionAlsoRemovesAnUnconfirmedPreview() throws Exception {
         String planId = createPlan("delete-weight-old", LocalDate.now().minusDays(1));
 
@@ -230,6 +244,7 @@ class HealthDataDeletionIntegrationTests {
         assertThat(count("body_measurements", "id='profile-keep-measurement'")).isEqualTo(1);
         assertThat(count("task_instances", "id='profile-user-task'")).isEqualTo(1);
         assertThat(count("task_templates", "id='profile-user-task-template'")).isEqualTo(1);
+        assertThat(count("health_reports", "id IN ('related-report','unrelated-report')")).isEqualTo(2);
         assertThat(count("health_reports", "id='profile-user-task-report'")).isEqualTo(1);
     }
 
