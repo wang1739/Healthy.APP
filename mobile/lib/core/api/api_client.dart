@@ -264,6 +264,56 @@ class ApiClient {
     return Map<String, dynamic>.from(response.data as Map);
   }
 
+  Future<Map<String, dynamic>> getProfileSections() async {
+    final response = await _authorized('GET', '/profile/sections');
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<Map<String, dynamic>> saveProfileSection(
+    String section,
+    Map<String, dynamic> data, {
+    required int expectedVersion,
+  }) async {
+    if (section == 'goal' &&
+        data['goalType'] != null &&
+        data['goalType'] != 'FAT_LOSS') {
+      throw const FormatException('当前目标的个性计划尚未开放');
+    }
+    if (section == 'risk') {
+      const fields = [
+        'pregnant',
+        'breastfeeding',
+        'eatingDisorderRisk',
+        'seriousChronicDisease',
+        'unsafeTarget',
+      ];
+      if (fields.any((field) => data[field] is! bool)) {
+        throw const FormatException('请完整填写风险评估');
+      }
+    }
+    final path = switch (section) {
+      'basic' => 'basic-info',
+      'body' => 'body-data',
+      'preferences' => 'dietary-preferences',
+      'goal' => 'health-goal',
+      'risk' => 'risk-info',
+      _ => section,
+    };
+    final response = await _authorized(
+      'PUT',
+      '/profile/sections/$path',
+      data: {...data, 'expectedVersion': expectedVersion},
+    );
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  Future<List<Map<String, dynamic>>> getProfileMeasurements() async {
+    final response = await _authorized('GET', '/profile/measurements');
+    final data = response.data;
+    final items = data is List ? data : (data as Map?)?['items'] as List? ?? [];
+    return items.map((item) => Map<String, dynamic>.from(item as Map)).toList();
+  }
+
   Future<void> saveProfile(Map<String, dynamic> data) async {
     await _authorized('PUT', '/profile', data: data);
   }
@@ -872,6 +922,16 @@ class ApiClient {
     'POST',
     '/plans/$id/recalculate',
     data: {'expectedVersion': expectedVersion},
+  );
+
+  Future<Map<String, dynamic>> confirmPlanRecalculation(
+    String id, {
+    required int expectedVersion,
+    required String previewId,
+  }) => _planRequest(
+    'POST',
+    '/plans/$id/recalculation/confirm',
+    data: {'expectedVersion': expectedVersion, 'previewId': previewId},
   );
 
   Future<Map<String, dynamic>> updatePlanTargets(

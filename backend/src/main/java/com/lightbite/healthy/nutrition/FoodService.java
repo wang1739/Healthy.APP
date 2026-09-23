@@ -60,6 +60,7 @@ public class FoodService {
 
     public NutritionDtos.FoodSuggestionsResponse suggestions(String userId, int limit) {
         validateLimit(limit);
+        List<String> restrictions = restrictions(userId);
         List<String> recentIds = jdbc.queryForList("""
                 SELECT food_id FROM meal_entries
                 WHERE user_id=? AND deleted_at IS NULL AND food_id IS NOT NULL
@@ -67,7 +68,8 @@ public class FoodService {
                 """, String.class, userId);
         Map<String, Boolean> unique = new LinkedHashMap<>();
         recentIds.forEach(id -> unique.putIfAbsent(id, Boolean.TRUE));
-        List<NutritionDtos.FoodResponse> recent = visibleFoods(userId, unique.keySet().stream().limit(limit).toList());
+        List<NutritionDtos.FoodResponse> recent = visibleFoods(
+                userId, unique.keySet().stream().limit(limit).toList(), restrictions);
 
         List<String> frequentIds = jdbc.queryForList("""
                 SELECT food_id FROM meal_entries
@@ -76,7 +78,8 @@ public class FoodService {
                 ORDER BY COUNT(*) DESC, MAX(created_at) DESC, food_id
                 LIMIT ?
                 """, String.class, userId, limit);
-        return new NutritionDtos.FoodSuggestionsResponse(recent, visibleFoods(userId, frequentIds));
+        return new NutritionDtos.FoodSuggestionsResponse(
+                recent, visibleFoods(userId, frequentIds, restrictions));
     }
 
     @Transactional
@@ -123,16 +126,60 @@ public class FoodService {
         return food(foods.get(0));
     }
 
-    private List<NutritionDtos.FoodResponse> visibleFoods(String userId, List<String> ids) {
+    private List<NutritionDtos.FoodResponse> visibleFoods(
+            String userId, List<String> ids, List<String> restrictions
+    ) {
         List<NutritionDtos.FoodResponse> result = new ArrayList<>();
         for (String id : ids) {
             try {
-                result.add(findVisible(userId, id));
+                NutritionDtos.FoodResponse food = findVisible(userId, id);
+                if (restrictions.stream().noneMatch(restriction -> conflicts(food, restriction))) {
+                    result.add(food);
+                }
             } catch (ApiException ignored) {
                 // A deleted custom food is intentionally omitted from suggestions.
             }
         }
         return result;
+    }
+
+    private List<String> restrictions(String userId) {
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT allergies,avoid_foods FROM dietary_preferences WHERE user_id=?", userId);
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        List<String> result = new ArrayList<>();
+        for (String field : List.of("allergies", "avoid_foods")) {
+            Object value = rows.get(0).get(field);
+            if (value == null) {
+                continue;
+            }
+            for (String token : value.toString().split("[、,，;；\\s]+")) {
+                if (!token.isBlank() && !"无".equals(token)) {
+                    result.add(token.trim());
+                }
+            }
+        }
+        return result;
+    }
+
+    private boolean conflicts(NutritionDtos.FoodResponse food, String restriction) {
+        String name = food.name();
+        if (name.contains(restriction) || restriction.contains(name)) {
+            return true;
+        }
+        return switch (restriction) {
+            case "乳制品" -> "DAIRY".equals(food.category());
+            case "坚果" -> name.contains("杏仁") || name.contains("核桃") || name.contains("花生");
+            case "海鲜" -> name.contains("鱼") || name.contains("虾") || name.contains("蟹") || name.contains("贝");
+            case "麸质" -> name.contains("面") || name.contains("麦") || name.contains("馒头");
+            case "葱姜蒜" -> name.contains("葱") || name.contains("姜") || name.contains("蒜");
+            case "动物内脏" -> name.contains("肝") || name.contains("肾") || name.contains("心")
+                    || name.contains("肠") || name.contains("内脏");
+            case "辛辣食物" -> name.contains("辣");
+            default -> false;
+        };
     }
 
     private FoodRow foodRow(ResultSet rs) throws SQLException {

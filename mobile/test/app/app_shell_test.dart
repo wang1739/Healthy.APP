@@ -6,6 +6,7 @@ import 'package:healthy/app/session_controller.dart';
 import 'package:healthy/core/api/api_client.dart';
 import 'package:healthy/core/api/backend_status.dart';
 import 'package:healthy/core/theme/app_theme.dart';
+import 'package:healthy/features/plan/application/plan_controller.dart';
 import 'package:healthy/features/today/domain/today_data.dart';
 import 'package:healthy/features/activity/domain/activity_data.dart';
 import 'package:healthy/features/sleep/application/sleep_reminder_scheduler.dart';
@@ -15,6 +16,12 @@ import 'package:healthy/features/tasks/domain/task_data.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _TodayApi extends ApiClient {
+  @override
+  Future<Map<String, dynamic>> getAccount() async => {
+    'phone': '13800138000',
+    'healthAuthorized': true,
+  };
+
   @override
   Future<TodayData> getToday(DateTime date) async => TodayData.fromJson({
     'date': formatLocalDate(date),
@@ -264,6 +271,40 @@ void main() {
     await tester.tap(action);
     await tester.pumpAndSettle();
     expect(find.text('饮食记录'), findsOneWidget);
+  });
+
+  testWidgets('健康数据删除触发会话修订时清空计划缓存', (tester) async {
+    final api = _TodayApi();
+    session = SessionController(api);
+    session.completeProfile();
+    session.consumePendingFeature();
+    final container = ProviderContainer(
+      overrides: [
+        backendStatusProvider.overrideWith(
+          (ref) async => BackendStatus.connected,
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: AppTheme.light,
+          home: AppShell(session: session),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final controller = container.read(planControllerProvider(api));
+    await controller.load();
+    expect(controller.state.data, isNotNull);
+
+    await session.healthDataChanged(profileDeleted: true);
+    await tester.pump();
+
+    expect(controller.state.data, isNull);
+    expect(controller.state.loading, isTrue);
   });
 
   testWidgets('今日记录运动直接进入运动表单且不增加底部导航', (tester) async {

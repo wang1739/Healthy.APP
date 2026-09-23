@@ -202,13 +202,23 @@ class SessionController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> healthDataChanged({bool? healthAuthorized}) async {
+  Future<void> healthDataChanged({
+    bool? healthAuthorized,
+    bool profileDeleted = false,
+  }) async {
     try {
       await (onHealthDataCleared ?? onLogout)?.call();
     } catch (_) {
       // The server result remains authoritative when local cleanup is partial.
     }
     if (healthAuthorized != null) this.healthAuthorized = healthAuthorized;
+    if (profileDeleted && access != UserAccess.guest) {
+      access = UserAccess.profileIncomplete;
+      profileStep = 0;
+      riskBlocked = false;
+      _pendingFeature = null;
+      stage = AppStage.profile;
+    }
     sessionRevision++;
     notifyListeners();
   }
@@ -226,12 +236,21 @@ class SessionController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> refreshProfileState() async {
+    await _loadProfileState();
+    notifyListeners();
+  }
+
   Future<void> _loadProfileState() async {
     try {
       final data = await api.profileCompleteness();
       profileStep = ((data['currentStep'] as num?)?.toInt() ?? 0).clamp(0, 7);
       riskBlocked = data['riskBlocked'] == true;
-      if (data['complete'] == true) access = UserAccess.profileComplete;
+      if (access != UserAccess.guest) {
+        access = data['complete'] == true
+            ? UserAccess.profileComplete
+            : UserAccess.profileIncomplete;
+      }
     } catch (_) {
       profileStep = access == UserAccess.profileComplete ? 7 : 0;
     }

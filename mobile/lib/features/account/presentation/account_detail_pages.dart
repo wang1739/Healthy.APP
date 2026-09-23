@@ -3,6 +3,18 @@ import 'package:healthy/app/session_controller.dart';
 import 'package:healthy/core/api/api_client.dart';
 import 'package:healthy/features/report/application/report_controller.dart';
 
+const _healthDataTypeLabels = {
+  'PROFILE': '健康档案',
+  'MEASUREMENTS': '身体测量与关联计划',
+  'NUTRITION': '饮食记录',
+  'HYDRATION': '饮水记录',
+  'ACTIVITY': '运动记录',
+  'SLEEP': '睡眠记录',
+  'TASKS': '任务记录',
+  'PLANS': '计划版本',
+  'REPORTS': '健康报告',
+};
+
 Map<String, Map<String, dynamic>> latestPrivacyDocuments(Iterable values) {
   final latest = <String, Map<String, dynamic>>{};
   for (final value in values) {
@@ -487,13 +499,7 @@ class _DataRightsPageState extends State<DataRightsPage> {
   DateTime? fromDate;
   DateTime? toDate;
 
-  static const deletionTypes = {
-    'MEASUREMENTS': '身体测量与计划',
-    'NUTRITION': '饮食记录',
-    'HYDRATION': '饮水记录',
-    'ACTIVITY': '运动记录',
-    'SLEEP': '睡眠记录',
-  };
+  static const deletionTypes = _healthDataTypeLabels;
 
   @override
   void initState() {
@@ -658,7 +664,11 @@ class _DataRightsPageState extends State<DataRightsPage> {
         fromDate: fromDate,
         toDate: toDate,
       );
-      await widget.session.healthDataChanged();
+      final deletesAll = types.contains('ALL');
+      await widget.session.healthDataChanged(
+        healthAuthorized: deletesAll ? false : null,
+        profileDeleted: deletesAll || types.contains('PROFILE'),
+      );
       if (mounted) setState(() => message = '健康数据已永久删除');
     } catch (e) {
       if (mounted) setState(() => message = ApiClient.errorMessage(e));
@@ -732,6 +742,9 @@ class _DataRightsPageState extends State<DataRightsPage> {
             FilterChip(
               label: const Text('全部健康数据'),
               selected: selectedTypes.contains('ALL'),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(6),
+              ),
               onSelected: busy
                   ? null
                   : (selected) => setState(() {
@@ -744,6 +757,9 @@ class _DataRightsPageState extends State<DataRightsPage> {
               (entry) => FilterChip(
                 label: Text(entry.value),
                 selected: selectedTypes.contains(entry.key),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6),
+                ),
                 onSelected: busy
                     ? null
                     : (selected) => setState(() {
@@ -820,7 +836,10 @@ bool _exportExpired(Map<String, dynamic> item) {
 String _impactCounts(Object? value) {
   if (value is! Map || value.isEmpty) return '0 条';
   return value.entries
-      .map((entry) => '${entry.key} ${entry.value} 条')
+      .map(
+        (entry) =>
+            '${_healthDataTypeLabels[entry.key.toString()] ?? '其他健康数据'} ${entry.value} 条',
+      )
       .join('、');
 }
 

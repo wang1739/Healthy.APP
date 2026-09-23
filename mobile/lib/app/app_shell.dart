@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:healthy/app/session_controller.dart';
 import 'package:healthy/features/account/presentation/account_page.dart';
 import 'package:healthy/features/nutrition/presentation/nutrition_page.dart';
 import 'package:healthy/features/hydration/presentation/hydration_page.dart';
 import 'package:healthy/features/hydration/application/hydration_reminder_scheduler.dart';
 import 'package:healthy/features/plan/presentation/plan_page.dart';
+import 'package:healthy/features/plan/application/plan_controller.dart';
 import 'package:healthy/features/report/presentation/report_page.dart';
 import 'package:healthy/features/report/domain/report_data.dart';
 import 'package:healthy/features/today/presentation/today_page.dart';
@@ -17,7 +19,7 @@ import 'package:healthy/features/tasks/application/task_notification_scheduler.d
 import 'package:healthy/features/tasks/presentation/tasks_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class AppShell extends StatefulWidget {
+class AppShell extends ConsumerStatefulWidget {
   const AppShell({
     required this.session,
     this.sleepReminderScheduler,
@@ -30,10 +32,11 @@ class AppShell extends StatefulWidget {
   final TaskNotificationScheduler? taskNotificationScheduler;
 
   @override
-  State<AppShell> createState() => _AppShellState();
+  ConsumerState<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
+class _AppShellState extends ConsumerState<AppShell>
+    with WidgetsBindingObserver {
   static const _pinnedKey = 'sidebar_pinned';
   static const _destinations = [
     NavigationDestination(
@@ -76,10 +79,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   int _sleepRevision = 0;
   int _taskRevision = 0;
   String? _reportIntent;
+  late int _planSessionRevision;
 
   @override
   void initState() {
     super.initState();
+    _planSessionRevision = widget.session.sessionRevision;
+    ref.read(planControllerProvider(widget.session.api)).reset(notify: false);
     WidgetsBinding.instance.addObserver(this);
     widget.session.addListener(_sessionChanged);
     HydrationReminderScheduler.openHydration.addListener(_openHydration);
@@ -120,6 +126,12 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   void _sessionChanged() {
     if (mounted) {
+      if (_planSessionRevision != widget.session.sessionRevision) {
+        _planSessionRevision = widget.session.sessionRevision;
+        ref
+            .read(planControllerProvider(widget.session.api))
+            .reset(notify: false);
+      }
       _syncSleepReminder();
       _syncTaskNotifications();
       setState(() {});
@@ -314,6 +326,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         access: widget.session.access,
         riskBlocked: widget.session.riskBlocked,
         autoPreview: _autoPreview,
+        sessionRevision: widget.session.sessionRevision,
         onProtectedAction: (label) => _requestFeature(label, 2),
         onConfirmed: () => setState(() => _index = 0),
         onEditProfile: widget.session.openProfile,

@@ -1,5 +1,6 @@
 package com.lightbite.healthy.plan;
 
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
@@ -41,6 +42,23 @@ public final class PlanDtos {
     }
 
     public record RecalculateRequest(@NotNull Integer expectedVersion) {
+    }
+
+    public record ConfirmRecalculationRequest(
+            @NotNull Integer expectedVersion,
+            @NotBlank @Size(max = 36) String previewId
+    ) {
+    }
+
+    public record RecalculationPreviewResponse(
+            String state,
+            String planId,
+            int baseVersion,
+            int previewVersion,
+            int profileVersion,
+            String previewId,
+            PlanResultResponse plan
+    ) {
     }
 
     public record PlanResultResponse(

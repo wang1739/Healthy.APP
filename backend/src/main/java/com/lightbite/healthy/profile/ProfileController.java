@@ -28,6 +28,47 @@ public class ProfileController {
         return profileService.profile(authentication.getName());
     }
 
+    @GetMapping("/sections")
+    ProfileDtos.ProfileSectionsResponse sections(Authentication authentication) {
+        return profileService.sections(authentication.getName());
+    }
+
+    @PutMapping("/sections/basic-info")
+    ProfileDtos.ProfileSectionsResponse saveBasicInfo(Authentication authentication,
+            @Valid @RequestBody ProfileDtos.BasicInfoRequest request) {
+        return profileService.saveBasicInfo(authentication.getName(), request);
+    }
+
+    @PutMapping("/sections/body-data")
+    ProfileDtos.ProfileSectionsResponse saveBodyData(Authentication authentication,
+            @Valid @RequestBody ProfileDtos.BodyDataRequest request) {
+        return profileService.saveBodyData(authentication.getName(), request);
+    }
+
+    @PutMapping("/sections/lifestyle")
+    ProfileDtos.ProfileSectionsResponse saveLifestyle(Authentication authentication,
+            @Valid @RequestBody ProfileDtos.LifestyleRequest request) {
+        return profileService.saveLifestyle(authentication.getName(), request);
+    }
+
+    @PutMapping("/sections/dietary-preferences")
+    ProfileDtos.ProfileSectionsResponse saveDietaryPreferences(Authentication authentication,
+            @Valid @RequestBody ProfileDtos.PreferencesRequest request) {
+        return profileService.saveDietaryPreferences(authentication.getName(), request);
+    }
+
+    @PutMapping("/sections/health-goal")
+    ProfileDtos.ProfileSectionsResponse saveHealthGoal(Authentication authentication,
+            @Valid @RequestBody ProfileDtos.HealthGoalRequest request) {
+        return profileService.saveHealthGoal(authentication.getName(), request);
+    }
+
+    @PutMapping("/sections/risk-info")
+    ProfileDtos.ProfileSectionsResponse saveRiskInfo(Authentication authentication,
+            @Valid @RequestBody ProfileDtos.RiskRequest request) {
+        return profileService.saveRiskInfo(authentication.getName(), request);
+    }
+
     @PutMapping
     ProfileDtos.CompletenessResponse saveProfile(
             Authentication authentication,

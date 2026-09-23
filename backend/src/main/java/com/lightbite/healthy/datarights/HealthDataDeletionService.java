@@ -31,7 +31,7 @@ public class HealthDataDeletionService {
         Map<String, Integer> counts = new LinkedHashMap<>();
         for (String type : types) counts.put(type, count(userId, type, selection.fromDate(), selection.toDate()));
         int reports = affectedReports(userId, types, selection.fromDate(), selection.toDate());
-        int plans = types.contains("MEASUREMENTS") ? affectedPlans(userId, selection.fromDate(), selection.toDate()) : 0;
+        int plans = affectedPlanVersionIds(userId, types, selection.fromDate(), selection.toDate()).size();
         return new HealthDataDeletionDtos.Impact(counts, reports, plans,
                 "删除后无法恢复；包含这些源数据的报告版本也会永久删除");
     }
@@ -94,27 +94,145 @@ public class HealthDataDeletionService {
                             + rangeClause(source.dateColumn(), from, to) + ")", String.class,
                     sourceParams(userId, source.sourceType(), from, to)));
         }
+        addReportsForSources(reportIds, userId, "PLAN_VERSION",
+                affectedPlanVersionIds(userId, types, from, to));
+        addReportsForSources(reportIds, userId, "TASK_INSTANCE",
+                affectedTaskInstanceIds(userId, types, from, to));
         return reportIds;
+    }
+
+    private void addReportsForSources(
+            Set<String> reportIds, String userId, String sourceType, Set<String> sourceIds
+    ) {
+        if (sourceIds.isEmpty()) return;
+        String placeholders = String.join(",", java.util.Collections.nCopies(sourceIds.size(), "?"));
+        java.util.ArrayList<Object> parameters = new java.util.ArrayList<>();
+        parameters.add(userId);
+        parameters.add(sourceType);
+        parameters.addAll(sourceIds);
+        reportIds.addAll(jdbc.queryForList("SELECT DISTINCT s.report_id FROM health_report_sources s "
+                        + "JOIN health_reports r ON r.id=s.report_id WHERE r.user_id=? AND s.source_type=? "
+                        + "AND s.source_id IN (" + placeholders + ")",
+                String.class, parameters.toArray()));
     }
 
     private int affectedReports(String userId, List<String> types, LocalDate from, LocalDate to) {
         return affectedReportIds(userId, types, from, to).size();
     }
 
+    private Set<String> affectedPlanVersionIds(String userId, List<String> types, LocalDate from, LocalDate to) {
+        List<VersionRef> selected = selectedPlanVersions(userId, types, from, to);
+        Set<String> versionIds = new LinkedHashSet<>();
+        Set<String> planIds = new LinkedHashSet<>();
+        for (VersionRef version : selected) {
+            versionIds.add(version.id());
+            planIds.add(version.planId());
+        }
+        for (String planId : planIds) {
+            versionIds.addAll(jdbc.queryForList("SELECT v.id FROM health_plan_versions v "
+                            + "JOIN health_plans p ON p.id=v.plan_id "
+                            + "WHERE p.user_id=? AND v.plan_id=? AND v.status='PREVIEW'",
+                    String.class, userId, planId));
+        }
+        return versionIds;
+    }
+
+    private Set<String> affectedTaskInstanceIds(String userId, List<String> types, LocalDate from, LocalDate to) {
+        Set<String> instanceIds = new LinkedHashSet<>();
+        if (types.contains("TASKS")) {
+            instanceIds.addAll(jdbc.queryForList("SELECT id FROM task_instances WHERE user_id=?"
+                            + rangeClause("original_local_date", from, to),
+                    String.class, params(userId, from, to)));
+        }
+        for (String planId : plansRemovedBySelection(userId, types, from, to)) {
+            instanceIds.addAll(jdbc.queryForList("SELECT i.id FROM task_instances i "
+                            + "JOIN task_templates t ON t.id=i.template_id "
+                            + "WHERE i.user_id=? AND t.user_id=? AND t.plan_id=?",
+                    String.class, userId, userId, planId));
+        }
+        return instanceIds;
+    }
+
+    private Set<String> plansRemovedBySelection(String userId, List<String> types, LocalDate from, LocalDate to) {
+        if (types.contains("PROFILE") || (types.contains("PLANS") && from == null && to == null)) {
+            return new LinkedHashSet<>(jdbc.queryForList(
+                    "SELECT id FROM health_plans WHERE user_id=?", String.class, userId));
+        }
+        List<VersionRef> selected = selectedPlanVersions(userId, types, from, to);
+        Set<String> selectedIds = new LinkedHashSet<>();
+        Set<String> planIds = new LinkedHashSet<>();
+        for (VersionRef version : selected) {
+            selectedIds.add(version.id());
+            planIds.add(version.planId());
+        }
+        Set<String> removed = new LinkedHashSet<>();
+        for (String planId : planIds) {
+            List<String> committedIds = jdbc.queryForList("SELECT v.id FROM health_plan_versions v "
+                            + "JOIN health_plans p ON p.id=v.plan_id "
+                            + "WHERE p.user_id=? AND v.plan_id=? AND v.status<>'PREVIEW'",
+                    String.class, userId, planId);
+            if (selectedIds.containsAll(committedIds)) removed.add(planId);
+        }
+        return removed;
+    }
+
+    private List<VersionRef> selectedPlanVersions(
+            String userId, List<String> types, LocalDate from, LocalDate to
+    ) {
+        Map<String, VersionRef> selected = new LinkedHashMap<>();
+        if (types.contains("PROFILE")) {
+            addVersions(selected, "SELECT v.id,v.plan_id FROM health_plan_versions v "
+                    + "JOIN health_plans p ON p.id=v.plan_id WHERE p.user_id=?", userId);
+            return selected.values().stream().toList();
+        }
+        if (types.contains("MEASUREMENTS")) {
+            addVersions(selected, "SELECT v.id,v.plan_id FROM health_plan_versions v "
+                            + "JOIN health_plans p ON p.id=v.plan_id WHERE p.user_id=? "
+                            + "AND v.source_measurement_id IN (SELECT id FROM body_measurements WHERE user_id=?"
+                            + rangeClause("CAST(measured_at AS DATE)", from, to) + ")",
+                    measurementVersionParams(userId, from, to));
+        }
+        if (types.contains("PLANS")) {
+            addVersions(selected, "SELECT v.id,v.plan_id FROM health_plan_versions v "
+                            + "JOIN health_plans p ON p.id=v.plan_id WHERE p.user_id=?"
+                            + rangeClause("v.calculation_date", from, to),
+                    params(userId, from, to));
+        }
+        return selected.values().stream().toList();
+    }
+
+    private void addVersions(Map<String, VersionRef> versions, String sql, Object... parameters) {
+        jdbc.query(sql, rs -> {
+            VersionRef version = new VersionRef(rs.getString("id"), rs.getString("plan_id"));
+            versions.put(version.id(), version);
+        }, parameters);
+    }
+
     private void deleteMeasurementsAndPlans(String userId, LocalDate from, LocalDate to) {
-        String selected = "SELECT id FROM body_measurements WHERE user_id=?" + rangeClause("CAST(measured_at AS DATE)", from, to);
-        Object[] parameters = params(userId, from, to);
-        List<String> plans = jdbc.queryForList("SELECT DISTINCT plan_id FROM health_plan_versions "
-                + "WHERE source_measurement_id IN (" + selected + ")", String.class, parameters);
-        jdbc.update("DELETE FROM health_plan_versions WHERE source_measurement_id IN (" + selected + ")", parameters);
+        List<String> types = List.of("MEASUREMENTS");
+        Set<String> plans = new LinkedHashSet<>();
+        for (VersionRef version : selectedPlanVersions(userId, types, from, to)) plans.add(version.planId());
+        deletePlanVersions(userId, affectedPlanVersionIds(userId, types, from, to));
         for (String planId : plans) repairPlan(userId, planId);
+        Object[] parameters = params(userId, from, to);
         jdbc.update("DELETE FROM body_measurements WHERE user_id=?" + rangeClause("CAST(measured_at AS DATE)", from, to), parameters);
     }
 
+    private void deletePlanVersions(String userId, Set<String> versionIds) {
+        for (String versionId : versionIds) {
+            jdbc.update("DELETE FROM health_plan_versions WHERE id=? "
+                    + "AND plan_id IN (SELECT id FROM health_plans WHERE user_id=?)", versionId, userId);
+        }
+    }
+
     private void repairPlan(String userId, String planId) {
-        Integer latest = jdbc.queryForObject("SELECT MAX(version_number) FROM health_plan_versions WHERE plan_id=?",
+        jdbc.update("DELETE FROM health_plan_versions WHERE plan_id=? AND status='PREVIEW'", planId);
+        Integer latest = jdbc.queryForObject("SELECT MAX(version_number) FROM health_plan_versions "
+                        + "WHERE plan_id=? AND status <> 'PREVIEW'",
                 Integer.class, planId);
         if (latest != null) {
+            jdbc.update("UPDATE health_plan_versions SET status=CASE WHEN version_number=? THEN 'ACTIVE' "
+                    + "ELSE 'HISTORY' END WHERE plan_id=? AND status <> 'PREVIEW'", latest, planId);
             jdbc.update("UPDATE health_plans SET current_version=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",
                     latest, planId, userId);
             return;
@@ -125,6 +243,7 @@ public class HealthDataDeletionService {
                 + "JOIN task_templates t ON t.id=i.template_id WHERE t.plan_id=?)", planId);
         jdbc.update("DELETE FROM task_instances WHERE template_id IN (SELECT id FROM task_templates WHERE plan_id=?)", planId);
         jdbc.update("DELETE FROM task_templates WHERE plan_id=?", planId);
+        jdbc.update("DELETE FROM health_plan_versions WHERE plan_id=?", planId);
         jdbc.update("DELETE FROM health_plans WHERE id=? AND user_id=?", planId, userId);
     }
 
@@ -144,6 +263,7 @@ public class HealthDataDeletionService {
     }
 
     private void deleteProfile(String userId) {
+        deletePlans(userId, null, null);
         jdbc.update("DELETE FROM health_goals WHERE user_id=?", userId);
         jdbc.update("DELETE FROM dietary_preferences WHERE user_id=?", userId);
         jdbc.update("DELETE FROM health_risk_answers WHERE user_id=?", userId);
@@ -151,11 +271,11 @@ public class HealthDataDeletionService {
     }
 
     private void deleteTasks(String userId, LocalDate from, LocalDate to) {
-        String selected = "SELECT id FROM task_instances WHERE user_id=?" + rangeClause("scheduled_date", from, to);
+        String selected = "SELECT id FROM task_instances WHERE user_id=?" + rangeClause("original_local_date", from, to);
         Object[] parameters = params(userId, from, to);
         jdbc.update("DELETE FROM task_notification_events WHERE task_instance_id IN (" + selected + ")", parameters);
         jdbc.update("DELETE FROM task_operation_keys WHERE instance_id IN (" + selected + ")", parameters);
-        jdbc.update("DELETE FROM task_instances WHERE user_id=?" + rangeClause("scheduled_date", from, to), parameters);
+        jdbc.update("DELETE FROM task_instances WHERE user_id=?" + rangeClause("original_local_date", from, to), parameters);
         if (from == null && to == null) jdbc.update("DELETE FROM task_templates WHERE user_id=?", userId);
     }
 
@@ -166,11 +286,10 @@ public class HealthDataDeletionService {
             }
             return;
         }
-        List<String> planIds = jdbc.queryForList("SELECT DISTINCT v.plan_id FROM health_plan_versions v "
-                        + "JOIN health_plans p ON p.id=v.plan_id WHERE p.user_id=?" + rangeClause("v.calculation_date", from, to),
-                String.class, params(userId, from, to));
-        jdbc.update("DELETE FROM health_plan_versions WHERE plan_id IN (SELECT id FROM health_plans WHERE user_id=?)"
-                + rangeClause("calculation_date", from, to), params(userId, from, to));
+        List<String> types = List.of("PLANS");
+        Set<String> planIds = new LinkedHashSet<>();
+        for (VersionRef version : selectedPlanVersions(userId, types, from, to)) planIds.add(version.planId());
+        deletePlanVersions(userId, affectedPlanVersionIds(userId, types, from, to));
         planIds.forEach(planId -> repairPlan(userId, planId));
     }
 
@@ -179,16 +298,10 @@ public class HealthDataDeletionService {
         repairPlan(userId, planId);
     }
 
-    private int affectedPlans(String userId, LocalDate from, LocalDate to) {
-        return jdbc.queryForObject("SELECT COUNT(*) FROM health_plan_versions WHERE source_measurement_id IN "
-                + "(SELECT id FROM body_measurements WHERE user_id=?" + rangeClause("CAST(measured_at AS DATE)", from, to) + ")",
-                Integer.class, params(userId, from, to));
-    }
-
     private int count(String userId, String type, LocalDate from, LocalDate to) {
         if ("PROFILE".equals(type)) return countSql("SELECT COUNT(*) FROM health_profiles WHERE user_id=?", userId);
         if ("TASKS".equals(type)) return countSql("SELECT COUNT(*) FROM task_instances WHERE user_id=?"
-                + rangeClause("scheduled_date", from, to), params(userId, from, to));
+                + rangeClause("original_local_date", from, to), params(userId, from, to));
         if ("PLANS".equals(type)) return countSql("SELECT COUNT(*) FROM health_plan_versions v JOIN health_plans p ON p.id=v.plan_id WHERE p.user_id=?"
                 + rangeClause("v.calculation_date", from, to), params(userId, from, to));
         if ("REPORTS".equals(type)) return countSql("SELECT COUNT(*) FROM health_reports WHERE user_id=?"
@@ -234,6 +347,11 @@ public class HealthDataDeletionService {
         if (from != null) values.add(Date.valueOf(from)); if (to != null) values.add(Date.valueOf(to)); return values.toArray();
     }
 
+    private Object[] measurementVersionParams(String userId, LocalDate from, LocalDate to) {
+        java.util.ArrayList<Object> values = new java.util.ArrayList<>(); values.add(userId); values.add(userId);
+        if (from != null) values.add(Date.valueOf(from)); if (to != null) values.add(Date.valueOf(to)); return values.toArray();
+    }
+
     private Source source(String type) { return switch (type) {
         case "MEASUREMENTS" -> new Source("body_measurements", "CAST(measured_at AS DATE)", "WEIGHT_MEASUREMENT");
         case "NUTRITION" -> new Source("meal_entries", "entry_date", "MEAL_ENTRY");
@@ -243,4 +361,5 @@ public class HealthDataDeletionService {
         default -> throw new IllegalArgumentException(type);
     }; }
     private record Source(String table, String dateColumn, String sourceType) {}
+    private record VersionRef(String id, String planId) {}
 }

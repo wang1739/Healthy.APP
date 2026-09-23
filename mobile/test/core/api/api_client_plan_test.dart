@@ -40,6 +40,11 @@ void main() {
     await api.getCurrentPlan();
     await api.getPlanHistory();
     await api.recalculatePlan('plan-1', expectedVersion: 1);
+    await api.confirmPlanRecalculation(
+      'plan-1',
+      expectedVersion: 1,
+      previewId: 'preview-1',
+    );
     await api.updatePlanTargets('plan-1', {
       'targetKcal': 1650,
       'expectedVersion': 1,
@@ -55,6 +60,7 @@ void main() {
         'GET /plans/current',
         'GET /plans/history',
         'POST /plans/plan-1/recalculate',
+        'POST /plans/plan-1/recalculation/confirm',
         'PUT /plans/plan-1/targets',
         'POST /plans/plan-1/pause',
         'POST /plans/plan-1/resume',
@@ -63,6 +69,10 @@ void main() {
     expect(adapter.requests[1].data, {'targetKcal': 1700});
     expect(adapter.requests[4].data, {'expectedVersion': 1});
     expect(adapter.requests[5].data, {
+      'expectedVersion': 1,
+      'previewId': 'preview-1',
+    });
+    expect(adapter.requests[6].data, {
       'targetKcal': 1650,
       'expectedVersion': 1,
     });

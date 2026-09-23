@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import com.lightbite.healthy.datarights.DataExportService;
+import com.lightbite.healthy.plan.PlanDtos;
 import com.lightbite.healthy.plan.PlanService;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -71,6 +72,8 @@ class DataExportIntegrationTests {
                 + "VALUES (?,'BALANCED','花生','香菜')", userId);
         jdbc.update("INSERT INTO health_risk_answers (id,user_id,risk_blocked) VALUES ('export-risk',?,FALSE)", userId);
         plans.create(userId, null);
+        String planId = jdbc.queryForObject("SELECT id FROM health_plans WHERE user_id=?", String.class, userId);
+        plans.recalculate(userId, planId, new PlanDtos.RecalculateRequest(1));
         jdbc.update("INSERT INTO meal_entries (id,user_id,entry_date,meal_type,food_name_snapshot,grams,"
                         + "calories_snapshot,protein_snapshot,carbs_snapshot,fat_snapshot,idempotency_key) "
                         + "VALUES ('export-meal',?,CURRENT_DATE,'BREAKFAST','燕麦粥',180,210,8,36,4,'export-meal')", userId);
@@ -91,8 +94,9 @@ class DataExportIntegrationTests {
             assertThat(document.isEncrypted()).isTrue();
             assertThat(document.getNumberOfPages()).isPositive();
             String text = new PDFTextStripper().getText(document);
-            assertThat(text).contains("小轻", "身高：165", "计划版本 1", "燕麦粥", "180 克", "350 毫升")
-                    .doesNotContain(PHONE, "export-meal", "export-water", "user_id", "password", "token", "验证码");
+            assertThat(text).contains("小轻", "身高：165", "计划版本 1（当前版本，计划状态：进行中", "燕麦粥", "180 克", "350 毫升")
+                    .doesNotContain(PHONE, "计划版本 2", "export-meal", "export-water", "user_id", "password",
+                            "token", "验证码");
         }
         mockMvc.perform(get("/api/v1/data-exports/" + id + "/download")
                         .header("Authorization", "Bearer " + token))

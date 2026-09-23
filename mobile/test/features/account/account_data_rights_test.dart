@@ -173,16 +173,14 @@ void main() {
   testWidgets('健康数据删除先展示服务端影响并要求明确二次确认', (tester) async {
     final api = _AccountRightsApi();
     var cleared = 0;
+    final session = SessionController(
+      api,
+      onHealthDataCleared: () async => cleared++,
+    );
+    session.completeProfile();
     await tester.pumpWidget(
       MaterialApp(
-        home: DataRightsPage(
-          api: api,
-          phone: '13800138000',
-          session: SessionController(
-            api,
-            onHealthDataCleared: () async => cleared++,
-          ),
-        ),
+        home: DataRightsPage(api: api, phone: '13800138000', session: session),
       ),
     );
     await tester.pumpAndSettle();
@@ -195,7 +193,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('查看删除影响'), findsOneWidget);
-    expect(find.textContaining('HYDRATION 3 条'), findsOneWidget);
+    expect(find.textContaining('饮水记录 3 条'), findsOneWidget);
     await tester.tap(find.text('继续验证'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('确认'));
@@ -209,6 +207,32 @@ void main() {
     expect(api.deletionPreviews, 1);
     expect(api.deletions, 1);
     expect(cleared, 1);
+    expect(session.access, UserAccess.profileIncomplete);
+    expect(session.stage, AppStage.profile);
+    expect(session.healthAuthorized, isFalse);
+  });
+
+  testWidgets('数据权利页展示后端支持的全部中文删除类型', (tester) async {
+    final api = _AccountRightsApi();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DataRightsPage(
+          api: api,
+          phone: '13800138000',
+          session: SessionController(api),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('健康档案'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    for (final label in ['健康档案', '任务记录', '计划版本', '健康报告']) {
+      expect(find.text(label), findsOneWidget);
+    }
   });
 
   testWidgets('数据权利页在窄屏和大字体下仍可滚动访问', (tester) async {

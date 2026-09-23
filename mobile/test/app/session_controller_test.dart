@@ -7,11 +7,15 @@ class _FakeApiClient extends ApiClient {
   _FakeApiClient({
     this.restored,
     this.currentStep = 0,
+    this.profileComplete = false,
+    this.riskBlocked = false,
     this.failLogout = false,
   });
 
   final LoginResult? restored;
-  final int currentStep;
+  int currentStep;
+  bool profileComplete;
+  bool riskBlocked;
   final bool failLogout;
   bool loggedOut = false;
 
@@ -21,7 +25,8 @@ class _FakeApiClient extends ApiClient {
   @override
   Future<Map<String, dynamic>> profileCompleteness() async => {
     'currentStep': currentStep,
-    'complete': false,
+    'complete': profileComplete,
+    'riskBlocked': riskBlocked,
   };
 
   @override
@@ -153,6 +158,58 @@ void main() {
     expect(cleared, 2);
     expect(session.accountKey, 'guest');
     expect(session.phone, isNull);
+  });
+
+  test('刷新档案状态时完整账号可以降级为未完成', () async {
+    final api = _FakeApiClient(
+      currentStep: 7,
+      profileComplete: true,
+      riskBlocked: true,
+    );
+    final session = SessionController(api);
+    await session.acceptLogin(
+      const LoginResult(profileComplete: true, phone: '13800138000'),
+    );
+    expect(session.access, UserAccess.profileComplete);
+
+    api
+      ..currentStep = 0
+      ..profileComplete = false
+      ..riskBlocked = false;
+    await session.refreshProfileState();
+
+    expect(session.access, UserAccess.profileIncomplete);
+    expect(session.profileStep, 0);
+    expect(session.riskBlocked, isFalse);
+  });
+
+  test('删除档案后降级并清空档案状态但保留账号与授权', () async {
+    final api = _FakeApiClient(currentStep: 7, profileComplete: true);
+    var cleared = 0;
+    final session = SessionController(
+      api,
+      onHealthDataCleared: () async => cleared++,
+    );
+    await session.acceptLogin(
+      const LoginResult(profileComplete: true, phone: '13800138000'),
+    );
+    final accountKey = session.accountKey;
+    final revision = session.sessionRevision;
+    var notifications = 0;
+    session.addListener(() => notifications++);
+
+    await session.healthDataChanged(profileDeleted: true);
+
+    expect(cleared, 1);
+    expect(session.access, UserAccess.profileIncomplete);
+    expect(session.profileStep, 0);
+    expect(session.riskBlocked, isFalse);
+    expect(session.stage, AppStage.profile);
+    expect(session.healthAuthorized, isTrue);
+    expect(session.phone, '13800138000');
+    expect(session.accountKey, accountKey);
+    expect(session.sessionRevision, revision + 1);
+    expect(notifications, 1);
   });
 
   test('直接完成健康档案后进入计划预览', () {

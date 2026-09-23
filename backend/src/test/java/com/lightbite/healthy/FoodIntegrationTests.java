@@ -30,6 +30,7 @@ class FoodIntegrationTests {
     void setUp() {
         mockMvc = MockMvcBuilders.webAppContextSetup(applicationContext).apply(springSecurity()).build();
         jdbc.update("DELETE FROM meal_entries");
+        jdbc.update("DELETE FROM dietary_preferences WHERE user_id IN ('food-api-a','food-api-b')");
         jdbc.update("DELETE FROM food_portions WHERE food_id IN (SELECT id FROM foods WHERE owner_user_id IS NOT NULL)");
         jdbc.update("DELETE FROM foods WHERE owner_user_id IS NOT NULL");
         jdbc.update("MERGE INTO users (id,phone,status) KEY(id) VALUES ('food-api-a','13000000111','ACTIVE')");
@@ -80,5 +81,29 @@ class FoodIntegrationTests {
                 .andExpect(jsonPath("$.recent.length()").value(1))
                 .andExpect(jsonPath("$.recent[0].name").value("米饭"))
                 .andExpect(jsonPath("$.frequent[0].name").value("米饭"));
+    }
+
+    @Test
+    void excludesNewAllergiesAndAvoidedFoodsFromSuggestions() throws Exception {
+        jdbc.update("INSERT INTO dietary_preferences (user_id,diet_type,allergies,avoid_foods) "
+                + "VALUES ('food-api-a','BALANCED','乳制品、花生','米饭')");
+        suggestionEntry("restricted-milk", "sys-milk", "纯牛奶", "2026-09-07 08:00:00");
+        suggestionEntry("restricted-peanut", "sys-peanut", "花生", "2026-09-07 09:00:00");
+        suggestionEntry("restricted-rice", "sys-rice", "米饭", "2026-09-07 10:00:00");
+        suggestionEntry("allowed-egg", "sys-egg", "鸡蛋", "2026-09-07 11:00:00");
+
+        mockMvc.perform(get("/api/v1/foods/suggestions?limit=8").with(user("food-api-a")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.recent.length()").value(1))
+                .andExpect(jsonPath("$.recent[0].name").value("鸡蛋"))
+                .andExpect(jsonPath("$.frequent.length()").value(1))
+                .andExpect(jsonPath("$.frequent[0].name").value("鸡蛋"));
+    }
+
+    private void suggestionEntry(String id, String foodId, String name, String createdAt) {
+        jdbc.update("INSERT INTO meal_entries (id,user_id,entry_date,meal_type,food_id,food_name_snapshot,grams,"
+                        + "calories_snapshot,protein_snapshot,carbs_snapshot,fat_snapshot,idempotency_key,created_at) "
+                        + "VALUES (?,'food-api-a','2026-09-07','LUNCH',?,?,100,100,10,10,1,?,?)",
+                id, foodId, name, id, java.sql.Timestamp.valueOf(createdAt));
     }
 }

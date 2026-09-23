@@ -157,15 +157,21 @@ public class DataExportService {
     }
 
     private DataExportPdfService.Section planSection(String userId, Instant cutoff) {
-        List<String> lines = jdbc.query("SELECT p.status,v.version_number,v.calculation_date,v.target_kcal,v.protein_g,"
-                        + "v.carbs_g,v.fat_g,v.water_ml,v.exercise_days,v.exercise_minutes,v.sleep_hours,v.adjustment_reason "
+        List<String> lines = jdbc.query("SELECT p.status AS plan_status,v.status AS version_status,v.version_number,"
+                        + "v.calculation_date,v.target_kcal,v.protein_g,v.carbs_g,v.fat_g,v.water_ml,"
+                        + "v.exercise_days,v.exercise_minutes,v.sleep_hours,v.adjustment_reason "
                         + "FROM health_plans p JOIN health_plan_versions v ON v.plan_id=p.id "
-                        + "WHERE p.user_id=? AND v.created_at<=? ORDER BY v.version_number",
-                (rs, row) -> "计划版本 " + rs.getInt(2) + "（" + label(rs.getString(1)) + "，计算日期 "
-                        + rs.getObject(3) + "）：每日 " + rs.getInt(4) + " 千卡，蛋白质 " + rs.getInt(5)
-                        + " 克，碳水 " + rs.getInt(6) + " 克，脂肪 " + rs.getInt(7) + " 克，饮水 "
-                        + rs.getInt(8) + " 毫升，每周运动 " + rs.getInt(9) + " 天/" + rs.getInt(10)
-                        + " 分钟，睡眠 " + rs.getBigDecimal(11) + " 小时，调整原因：" + value(rs.getObject(12)),
+                        + "WHERE p.user_id=? AND v.created_at<=? AND (v.status='HISTORY' "
+                        + "OR (v.status='ACTIVE' AND v.version_number=p.current_version)) ORDER BY v.version_number",
+                (rs, row) -> "计划版本 " + rs.getInt("version_number") + "（"
+                        + ("ACTIVE".equals(rs.getString("version_status")) ? "当前版本" : "历史版本")
+                        + "，计划状态：" + label(rs.getString("plan_status")) + "，计算日期 "
+                        + rs.getObject("calculation_date") + "）：每日 " + rs.getInt("target_kcal")
+                        + " 千卡，蛋白质 " + rs.getInt("protein_g") + " 克，碳水 " + rs.getInt("carbs_g")
+                        + " 克，脂肪 " + rs.getInt("fat_g") + " 克，饮水 " + rs.getInt("water_ml")
+                        + " 毫升，每周运动 " + rs.getInt("exercise_days") + " 天/"
+                        + rs.getInt("exercise_minutes") + " 分钟，睡眠 " + rs.getBigDecimal("sleep_hours")
+                        + " 小时，调整原因：" + value(rs.getObject("adjustment_reason")),
                 userId, Timestamp.from(cutoff));
         return new DataExportPdfService.Section("健康计划", empty(lines, "暂无健康计划"));
     }
