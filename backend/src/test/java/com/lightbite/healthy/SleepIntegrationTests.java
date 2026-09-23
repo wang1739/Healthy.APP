@@ -50,6 +50,7 @@ class SleepIntegrationTests {
             jdbc.update("DELETE FROM health_profiles WHERE user_id=?", userId);
             jdbc.update("MERGE INTO users (id,phone,status) KEY(id) VALUES (?,?,'ACTIVE')", userId,
                     USER_A.equals(userId) ? "13000000121" : "13000000122");
+            TestHealthAuthorization.grant(jdbc, userId);
             jdbc.update("INSERT INTO health_profiles (user_id,current_step,completed) VALUES (?,7,TRUE)", userId);
         }
     }

@@ -106,6 +106,7 @@ class NutritionIntegrationTests {
 
     private void createUser(String id, String phone) {
         jdbc.update("MERGE INTO users (id,phone,status) KEY(id) VALUES (?,?,'ACTIVE')", id, phone);
+        TestHealthAuthorization.grant(jdbc, id);
         jdbc.update("DELETE FROM health_profiles WHERE user_id=?", id);
         jdbc.update("INSERT INTO health_profiles (user_id,current_step,completed,risk_blocked) VALUES (?,7,TRUE,FALSE)", id);
     }

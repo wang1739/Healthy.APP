@@ -22,6 +22,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.context.event.EventListener;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.scheduling.annotation.Scheduled;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class DataExportService {
@@ -29,10 +31,11 @@ public class DataExportService {
     private final JdbcTemplate jdbc;
     private final AuthService auth;
     private final DataExportPdfService pdf;
+    private final ObjectMapper json;
     private final Path exportDirectory;
 
-    public DataExportService(JdbcTemplate jdbc, AuthService auth, DataExportPdfService pdf) {
-        this.jdbc = jdbc; this.auth = auth; this.pdf = pdf;
+    public DataExportService(JdbcTemplate jdbc, AuthService auth, DataExportPdfService pdf, ObjectMapper json) {
+        this.jdbc = jdbc; this.auth = auth; this.pdf = pdf; this.json = json;
         this.exportDirectory = Path.of(System.getProperty("java.io.tmpdir"), "healthy-data-exports");
     }
 
@@ -193,12 +196,32 @@ public class DataExportService {
     }
 
     private DataExportPdfService.Section reportSection(String userId, Instant cutoff) {
-        List<String> lines = jdbc.query("SELECT report_type,period_start,period_end,version,created_at FROM health_reports "
+        List<String> lines = new ArrayList<>();
+        jdbc.query("SELECT report_type,period_start,period_end,version,created_at,snapshot_json FROM health_reports "
                         + "WHERE user_id=? AND deleted_at IS NULL AND created_at<=? ORDER BY period_start,version",
-                (rs, row) -> "健康报告：" + label(rs.getString(1)) + "，周期 " + rs.getObject(2) + " 至 "
-                        + rs.getObject(3) + "，版本 " + rs.getInt(4) + "，生成时间 " + rs.getTimestamp(5),
-                userId, Timestamp.from(cutoff));
+                (org.springframework.jdbc.core.RowCallbackHandler) rs -> {
+                    lines.add("健康报告：" + label(rs.getString(1)) + "，周期 " + rs.getObject(2) + " 至 "
+                            + rs.getObject(3) + "，版本 " + rs.getInt(4) + "，生成时间 " + rs.getTimestamp(5));
+                    lines.addAll(reportContent(rs.getString(6)));
+                }, userId, Timestamp.from(cutoff));
         return new DataExportPdfService.Section("健康报告目录", empty(lines, "暂无健康报告"));
+    }
+
+    private List<String> reportContent(String value) {
+        JsonNode snapshot = json.readTree(value);
+        List<String> lines = new ArrayList<>();
+        add(lines, "报告结论：", snapshot.path("conclusion").asText());
+        for (JsonNode metric : snapshot.path("keyMetrics"))
+            add(lines, "关键指标：", metric.path("label").asText() + "：" + metric.path("value").asText()
+                    + (metric.path("unit").asText().isBlank() ? "" : " " + metric.path("unit").asText()));
+        for (JsonNode advice : snapshot.path("advice"))
+            add(lines, "建议：", advice.path("title").asText() + "：" + advice.path("description").asText());
+        add(lines, "说明：", snapshot.path("disclaimer").asText());
+        return lines;
+    }
+
+    private void add(List<String> lines, String prefix, String value) {
+        if (value != null && !value.isBlank()) lines.add(prefix + value);
     }
 
     @EventListener(ApplicationReadyEvent.class)

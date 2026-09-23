@@ -117,6 +117,28 @@ void main() {
     expect(otherAccount.state.day, isNull);
   });
 
+  test('撤回授权后清除当前账号的持久缓存', () async {
+    final api = _Api();
+    final controller = TaskController(
+      api,
+      accountKey: 'a',
+      now: () => DateTime(2026, 9, 10),
+    );
+    await controller.load(DateTime(2026, 9, 10));
+    await Future<void>.delayed(Duration.zero);
+    await TaskController.clearAccountCache('a');
+
+    api.failLoad = true;
+    final offline = TaskController(
+      api,
+      accountKey: 'a',
+      now: () => DateTime(2026, 9, 10),
+    );
+    await offline.load(DateTime(2026, 9, 10));
+
+    expect(offline.state.day, isNull);
+  });
+
   test('日期切换与页面销毁会丢弃迟到响应', () async {
     final api = _Api();
     api.loads['2026-09-10'] = Completer<TaskDay>();

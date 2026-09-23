@@ -66,6 +66,14 @@ class AuthProfileIntegrationTests {
         String accessToken = JsonPath.read(loginBody, "$.accessToken");
         String refreshToken = JsonPath.read(loginBody, "$.refreshToken");
 
+        mockMvc.perform(post("/api/v1/privacy/consents")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"documentType":"HEALTH_DATA_AUTHORIZATION","version":"2026-09"}
+                                """))
+                .andExpect(status().isNoContent());
+
         mockMvc.perform(post("/api/v1/auth/password/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -163,6 +171,7 @@ class AuthProfileIntegrationTests {
         String userId = "legacy-other-profile";
         jdbc.update("MERGE INTO users (id, phone, status) KEY(id) VALUES (?, ?, 'ACTIVE')",
                 userId, "13700137000");
+        TestHealthAuthorization.grant(jdbc, userId);
         jdbc.update("DELETE FROM health_profiles WHERE user_id=?", userId);
         jdbc.update("""
                 INSERT INTO health_profiles

@@ -53,6 +53,7 @@ class ActivityIntegrationTests {
             jdbc.update("DELETE FROM health_profiles WHERE user_id=?", userId);
             jdbc.update("MERGE INTO users (id,phone,status) KEY(id) VALUES (?,?,'ACTIVE')", userId,
                     USER_A.equals(userId) ? "13000000031" : "13000000032");
+            TestHealthAuthorization.grant(jdbc, userId);
             jdbc.update("INSERT INTO health_profiles (user_id,current_step,completed) VALUES (?,7,TRUE)", userId);
             jdbc.update("INSERT INTO body_measurements (id,user_id,weight_kg,measured_at) VALUES (RANDOM_UUID(),?,?,CURRENT_TIMESTAMP)",
                     userId, new BigDecimal(USER_A.equals(userId) ? "60" : "80"));

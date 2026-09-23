@@ -6,6 +6,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.sql.Timestamp;
+import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,12 +40,24 @@ class AccountDeletionIntegrationTests {
     @Test
     void pendingAccountGetsRestrictedSessionAndCanRecoverWithinCoolingOffPeriod() throws Exception {
         String normalToken = register(PHONE);
+        String userId = ((com.lightbite.healthy.auth.AuthService) context.getBean(
+                com.lightbite.healthy.auth.AuthService.class)).validateAccessToken(normalToken).userId();
+        Path exportFile = Files.createTempFile("healthy-account-delete-", ".pdf");
+        jdbc.update("INSERT INTO data_export_jobs (id,user_id,status,data_cutoff_at,file_path,completed_at,expires_at) "
+                        + "VALUES ('account-delete-export',?,'READY',?,?,?,?)", userId, Timestamp.from(Instant.now()),
+                exportFile.toString(), Timestamp.from(Instant.now()), Timestamp.from(Instant.now().plusSeconds(3600)));
         String deleteCode = sendCode(PHONE, "ACCOUNT_DELETE");
         mockMvc.perform(post("/api/v1/account/deletion").header("Authorization", "Bearer " + normalToken)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"code\":\"%s\"}".formatted(deleteCode)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("注销处理中"))
                 .andExpect(jsonPath("$.remainingSeconds").isNumber());
+        org.assertj.core.api.Assertions.assertThat(exportFile).doesNotExist();
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject(
+                "SELECT status FROM data_export_jobs WHERE id='account-delete-export'", String.class))
+                .isEqualTo("CANCELLED");
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject(
+                "SELECT file_path FROM data_export_jobs WHERE id='account-delete-export'", String.class)).isNull();
 
         mockMvc.perform(get("/api/v1/account/deletion").header("Authorization", "Bearer " + normalToken))
                 .andExpect(status().isUnauthorized());

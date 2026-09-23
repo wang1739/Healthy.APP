@@ -214,6 +214,7 @@ class PlanIntegrationTests {
 
     private void createCompleteProfile(String userId, String phone) {
         jdbc.update("MERGE INTO users (id, phone, status) KEY(id) VALUES (?, ?, 'ACTIVE')", userId, phone);
+        TestHealthAuthorization.grant(jdbc, userId);
         jdbc.update("DELETE FROM health_risk_answers WHERE user_id=?", userId);
         jdbc.update("DELETE FROM body_measurements WHERE user_id=?", userId);
         jdbc.update("DELETE FROM health_goals WHERE user_id=?", userId);
