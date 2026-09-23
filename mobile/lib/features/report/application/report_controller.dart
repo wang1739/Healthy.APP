@@ -46,7 +46,7 @@ class ReportController extends ChangeNotifier {
     SaveReportPdf? savePdf,
   }) : date = reportPeriodAnchor(type, date),
        _preferences = preferences ?? SharedPreferences.getInstance,
-       _savePdf = savePdf ?? _saveToTemporaryDirectory;
+       _savePdf = savePdf ?? saveReportPdfToTemporaryDirectory;
 
   final ApiClient api;
   final String accountKey;
@@ -301,7 +301,10 @@ DateTime reportPeriodAnchor(ReportType type, DateTime value) {
   };
 }
 
-Future<String> _saveToTemporaryDirectory(String name, List<int> bytes) async {
+Future<String> saveReportPdfToTemporaryDirectory(
+  String name,
+  List<int> bytes,
+) async {
   final directory = Directory(
     '${Directory.systemTemp.path}${Platform.pathSeparator}healthy-reports',
   );

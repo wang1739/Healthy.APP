@@ -278,6 +278,16 @@ class TaskNotificationScheduler {
       }
     }
     await prefs.remove(key);
+    for (final value
+        in prefs
+            .getKeys()
+            .where(
+              (value) =>
+                  value.startsWith('task_notification_date_${accountKey}_'),
+            )
+            .toList()) {
+      await prefs.remove(value);
+    }
     await _report(events);
   }
 

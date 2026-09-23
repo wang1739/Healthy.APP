@@ -14,16 +14,18 @@ class PendingFeature {
 }
 
 class SessionController extends ChangeNotifier {
-  SessionController(this.api, {this.onLogout});
+  SessionController(this.api, {this.onLogout, this.onHealthDataCleared});
 
   static const _guestBrowseKey = 'guest_browse_enabled';
 
   final ApiClient api;
   final Future<void> Function()? onLogout;
+  final Future<void> Function()? onHealthDataCleared;
   AppStage stage = AppStage.loading;
   UserAccess access = UserAccess.guest;
   int profileStep = 0;
   bool riskBlocked = false;
+  bool healthAuthorized = true;
   int sessionRevision = 0;
   String accountKey = 'guest';
   String? phone;
@@ -72,6 +74,7 @@ class SessionController extends ChangeNotifier {
     await preferences.setBool(_guestBrowseKey, true);
     access = UserAccess.guest;
     accountKey = 'guest';
+    healthAuthorized = true;
     _pendingFeature = null;
     stage = AppStage.home;
     notifyListeners();
@@ -79,6 +82,7 @@ class SessionController extends ChangeNotifier {
 
   Future<void> acceptLogin(LoginResult result) async {
     sessionRevision++;
+    healthAuthorized = true;
     phone = result.phone;
     if (result.accountStatus == 'DELETION_PENDING') {
       access = UserAccess.profileIncomplete;
@@ -152,11 +156,15 @@ class SessionController extends ChangeNotifier {
 
   Future<void> logout() async {
     try {
-      await onLogout?.call();
+      await (onHealthDataCleared ?? onLogout)?.call();
     } catch (_) {
       // Local notification cleanup must not trap the user in a session.
     }
-    await api.logout();
+    try {
+      await api.logout();
+    } catch (_) {
+      // Local logout must complete even when the session is already revoked.
+    }
     sessionRevision++;
     final preferences = await SharedPreferences.getInstance();
     await preferences.setBool(_guestBrowseKey, true);
@@ -165,16 +173,43 @@ class SessionController extends ChangeNotifier {
     phone = null;
     profileStep = 0;
     riskBlocked = false;
+    healthAuthorized = true;
     _pendingFeature = null;
     stage = AppStage.home;
     notifyListeners();
   }
 
   Future<void> accountDeletionRequested() async {
-    await api.logout();
+    try {
+      await (onHealthDataCleared ?? onLogout)?.call();
+    } catch (_) {
+      // Server-side deletion still ends the session if local cleanup fails.
+    }
+    try {
+      await api.logout();
+    } catch (_) {
+      // Account deletion revokes the token before this best-effort logout.
+    }
     sessionRevision++;
     access = UserAccess.guest;
+    accountKey = 'guest';
+    phone = null;
+    profileStep = 0;
+    riskBlocked = false;
+    healthAuthorized = true;
+    _pendingFeature = null;
     stage = AppStage.login;
+    notifyListeners();
+  }
+
+  Future<void> healthDataChanged({bool? healthAuthorized}) async {
+    try {
+      await (onHealthDataCleared ?? onLogout)?.call();
+    } catch (_) {
+      // The server result remains authoritative when local cleanup is partial.
+    }
+    if (healthAuthorized != null) this.healthAuthorized = healthAuthorized;
+    sessionRevision++;
     notifyListeners();
   }
 
