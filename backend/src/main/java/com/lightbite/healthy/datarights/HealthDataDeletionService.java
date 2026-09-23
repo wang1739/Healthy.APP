@@ -17,7 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class HealthDataDeletionService {
-    private static final Set<String> TYPES = Set.of("MEASUREMENTS", "NUTRITION", "HYDRATION", "ACTIVITY", "SLEEP", "ALL");
+    private static final Set<String> TYPES = Set.of("PROFILE", "MEASUREMENTS", "NUTRITION", "HYDRATION",
+            "ACTIVITY", "SLEEP", "TASKS", "PLANS", "REPORTS", "ALL");
+    private static final Set<String> SOURCE_TYPES = Set.of("MEASUREMENTS", "NUTRITION", "HYDRATION", "ACTIVITY", "SLEEP");
     private final JdbcTemplate jdbc;
     private final AuthService auth;
 
@@ -36,6 +38,7 @@ public class HealthDataDeletionService {
 
     @Transactional
     public HealthDataDeletionDtos.Result delete(String userId, HealthDataDeletionDtos.DeleteRequest request) {
+        jdbc.queryForObject("SELECT id FROM users WHERE id=? FOR UPDATE", String.class, userId);
         HealthDataDeletionDtos.Selection selection = new HealthDataDeletionDtos.Selection(
                 request.dataTypes(), request.fromDate(), request.toDate());
         HealthDataDeletionDtos.Impact impact = preview(userId, selection);
@@ -59,6 +62,9 @@ public class HealthDataDeletionService {
                     + rangeClause("wake_local_date", request.fromDate(), request.toDate()) + ")", params(userId, request.fromDate(), request.toDate()));
             deleteRange("sleep_records", "wake_local_date", userId, request.fromDate(), request.toDate());
         }
+        if (types.contains("TASKS")) deleteTasks(userId, request.fromDate(), request.toDate());
+        if (types.contains("PLANS")) deletePlans(userId, request.fromDate(), request.toDate());
+        if (types.contains("PROFILE")) deleteProfile(userId);
         if (request.dataTypes().contains("ALL")) deleteProfileState(userId);
         jdbc.update("UPDATE health_data_deletion_jobs SET status='COMPLETED',completed_at=CURRENT_TIMESTAMP WHERE id=?", id);
         return new HealthDataDeletionDtos.Result(id, "已完成", impact);
@@ -75,6 +81,12 @@ public class HealthDataDeletionService {
     private Set<String> affectedReportIds(String userId, List<String> types, LocalDate from, LocalDate to) {
         Set<String> reportIds = new LinkedHashSet<>();
         for (String type : types) {
+            if ("REPORTS".equals(type)) {
+                reportIds.addAll(jdbc.queryForList("SELECT id FROM health_reports WHERE user_id=?"
+                                + rangeClause("period_start", from, to), String.class, params(userId, from, to)));
+                continue;
+            }
+            if (!SOURCE_TYPES.contains(type)) continue;
             Source source = source(type);
             reportIds.addAll(jdbc.queryForList("SELECT DISTINCT s.report_id FROM health_report_sources s "
                             + "JOIN health_reports r ON r.id=s.report_id WHERE r.user_id=? AND s.source_type=? "
@@ -131,6 +143,42 @@ public class HealthDataDeletionService {
         jdbc.update("DELETE FROM health_plans WHERE user_id=?", userId);
     }
 
+    private void deleteProfile(String userId) {
+        jdbc.update("DELETE FROM health_goals WHERE user_id=?", userId);
+        jdbc.update("DELETE FROM dietary_preferences WHERE user_id=?", userId);
+        jdbc.update("DELETE FROM health_risk_answers WHERE user_id=?", userId);
+        jdbc.update("DELETE FROM health_profiles WHERE user_id=?", userId);
+    }
+
+    private void deleteTasks(String userId, LocalDate from, LocalDate to) {
+        String selected = "SELECT id FROM task_instances WHERE user_id=?" + rangeClause("scheduled_date", from, to);
+        Object[] parameters = params(userId, from, to);
+        jdbc.update("DELETE FROM task_notification_events WHERE task_instance_id IN (" + selected + ")", parameters);
+        jdbc.update("DELETE FROM task_operation_keys WHERE instance_id IN (" + selected + ")", parameters);
+        jdbc.update("DELETE FROM task_instances WHERE user_id=?" + rangeClause("scheduled_date", from, to), parameters);
+        if (from == null && to == null) jdbc.update("DELETE FROM task_templates WHERE user_id=?", userId);
+    }
+
+    private void deletePlans(String userId, LocalDate from, LocalDate to) {
+        if (from == null && to == null) {
+            for (String planId : jdbc.queryForList("SELECT id FROM health_plans WHERE user_id=?", String.class, userId)) {
+                repairPlanAfterDeletingAllVersions(userId, planId);
+            }
+            return;
+        }
+        List<String> planIds = jdbc.queryForList("SELECT DISTINCT v.plan_id FROM health_plan_versions v "
+                        + "JOIN health_plans p ON p.id=v.plan_id WHERE p.user_id=?" + rangeClause("v.calculation_date", from, to),
+                String.class, params(userId, from, to));
+        jdbc.update("DELETE FROM health_plan_versions WHERE plan_id IN (SELECT id FROM health_plans WHERE user_id=?)"
+                + rangeClause("calculation_date", from, to), params(userId, from, to));
+        planIds.forEach(planId -> repairPlan(userId, planId));
+    }
+
+    private void repairPlanAfterDeletingAllVersions(String userId, String planId) {
+        jdbc.update("DELETE FROM health_plan_versions WHERE plan_id=?", planId);
+        repairPlan(userId, planId);
+    }
+
     private int affectedPlans(String userId, LocalDate from, LocalDate to) {
         return jdbc.queryForObject("SELECT COUNT(*) FROM health_plan_versions WHERE source_measurement_id IN "
                 + "(SELECT id FROM body_measurements WHERE user_id=?" + rangeClause("CAST(measured_at AS DATE)", from, to) + ")",
@@ -138,6 +186,13 @@ public class HealthDataDeletionService {
     }
 
     private int count(String userId, String type, LocalDate from, LocalDate to) {
+        if ("PROFILE".equals(type)) return countSql("SELECT COUNT(*) FROM health_profiles WHERE user_id=?", userId);
+        if ("TASKS".equals(type)) return countSql("SELECT COUNT(*) FROM task_instances WHERE user_id=?"
+                + rangeClause("scheduled_date", from, to), params(userId, from, to));
+        if ("PLANS".equals(type)) return countSql("SELECT COUNT(*) FROM health_plan_versions v JOIN health_plans p ON p.id=v.plan_id WHERE p.user_id=?"
+                + rangeClause("v.calculation_date", from, to), params(userId, from, to));
+        if ("REPORTS".equals(type)) return countSql("SELECT COUNT(*) FROM health_reports WHERE user_id=?"
+                + rangeClause("period_start", from, to), params(userId, from, to));
         Source source = source(type);
         return jdbc.queryForObject("SELECT COUNT(*) FROM " + source.table() + " WHERE user_id=?"
                 + rangeClause(source.dateColumn(), from, to), Integer.class, params(userId, from, to));
@@ -148,8 +203,14 @@ public class HealthDataDeletionService {
     }
 
     private List<String> expand(List<String> requested) {
-        return requested.contains("ALL") ? List.of("MEASUREMENTS", "NUTRITION", "HYDRATION", "ACTIVITY", "SLEEP")
+        return requested.contains("ALL") ? List.of("PROFILE", "MEASUREMENTS", "NUTRITION", "HYDRATION", "ACTIVITY",
+                "SLEEP", "TASKS", "PLANS", "REPORTS")
                 : requested.stream().distinct().toList();
+    }
+
+    private int countSql(String sql, Object... parameters) {
+        Integer value = jdbc.queryForObject(sql, Integer.class, parameters);
+        return value == null ? 0 : value;
     }
 
     private void validate(List<String> types, LocalDate from, LocalDate to) {
@@ -160,7 +221,7 @@ public class HealthDataDeletionService {
     }
 
     private String rangeClause(String column, LocalDate from, LocalDate to) {
-        return (from == null ? "" : " AND " + column + ">?") + (to == null ? "" : " AND " + column + "<=?");
+        return (from == null ? "" : " AND " + column + ">=?") + (to == null ? "" : " AND " + column + "<=?");
     }
 
     private Object[] params(String userId, LocalDate from, LocalDate to) {

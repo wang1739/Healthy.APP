@@ -14,7 +14,7 @@ import org.springframework.web.servlet.HandlerInterceptor;
 public class HealthAuthorizationInterceptor implements HandlerInterceptor {
     private static final List<String> HEALTH_PATHS = List.of(
             "/api/v1/profile", "/api/v1/plans", "/api/v1/nutrition", "/api/v1/hydration",
-            "/api/v1/activities", "/api/v1/sleep", "/api/v1/tasks", "/api/v1/today", "/api/v1/reports"
+            "/api/v1/activity", "/api/v1/sleep", "/api/v1/tasks", "/api/v1/today", "/api/v1/reports"
     );
     private final JdbcTemplate jdbc;
 

@@ -99,7 +99,8 @@ public class PlanPolicy {
             String goalType,
             BigDecimal targetWeightKg,
             LocalDate targetDate,
-            int profileVersion
+            int profileVersion,
+            String sourceMeasurementId
     ) {
     }
 }
