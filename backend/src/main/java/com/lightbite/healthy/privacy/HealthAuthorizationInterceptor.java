@@ -26,10 +26,13 @@ public class HealthAuthorizationInterceptor implements HandlerInterceptor {
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         Authentication authentication = (Authentication) request.getUserPrincipal();
         if (authentication == null || !isHealthPath(request.getRequestURI())) return true;
-        Boolean withdrawn = jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM health_permissions "
-                        + "WHERE user_id=? AND health_data_authorized=FALSE)",
-                Boolean.class, authentication.getName());
-        if (Boolean.TRUE.equals(withdrawn)) {
+        List<Boolean> permissions = jdbc.query("SELECT health_data_authorized FROM health_permissions WHERE user_id=?",
+                (rs, row) -> rs.getBoolean(1), authentication.getName());
+        if (permissions.isEmpty()) {
+            throw new ApiException(HttpStatus.LOCKED, "HEALTH_AUTHORIZATION_REQUIRED",
+                    "请先同意健康数据授权后使用此功能");
+        }
+        if (!permissions.get(0)) {
             throw new ApiException(HttpStatus.LOCKED, "HEALTH_AUTHORIZATION_WITHDRAWN",
                     "健康数据授权已撤回，请重新同意后使用此功能");
         }

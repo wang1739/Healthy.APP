@@ -55,9 +55,11 @@ public class PrivacyService {
 
     @Transactional
     public void revokeHealth(String userId) {
+        Boolean authorized = jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM health_permissions "
+                + "WHERE user_id=? AND health_data_authorized=TRUE)", Boolean.class, userId);
+        if (!Boolean.TRUE.equals(authorized)) return;
         int changed = jdbc.update("UPDATE health_permissions SET health_data_authorized=FALSE,updated_at=CURRENT_TIMESTAMP "
                 + "WHERE user_id=?", userId);
-        if (changed == 0) jdbc.update("INSERT INTO health_permissions (user_id,health_data_authorized) VALUES (?,FALSE)", userId);
         String version = latestAccepted(center(userId).history(), "HEALTH_DATA_AUTHORIZATION");
         jdbc.update("INSERT INTO consent_events (id,user_id,document_type,document_version,action) VALUES (?,?,?,?,?)",
                 UUID.randomUUID().toString(), userId, "HEALTH_DATA_AUTHORIZATION",

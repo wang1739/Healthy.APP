@@ -111,6 +111,30 @@ void main() {
     expect(other.state.report, isNull);
   });
 
+  test('删除健康数据后清除当前账号的持久缓存', () async {
+    final date = DateTime(2026, 9, 7);
+    final api = _Api()..reports['r1'] = _report('r1', 2, date);
+    final controller = ReportController(
+      api,
+      accountKey: 'a',
+      type: ReportType.weekly,
+      date: date,
+    );
+    await controller.load();
+    await ReportController.clearAccountCache('a');
+
+    final offline = _Api()..listError = Exception('offline');
+    final restored = ReportController(
+      offline,
+      accountKey: 'a',
+      type: ReportType.weekly,
+      date: date,
+    );
+    await restored.load();
+
+    expect(restored.state.report, isNull);
+  });
+
   test('切换周期和销毁后丢弃迟到响应', () async {
     final api = _Api()..pendingList = Completer<ReportPageData>();
     final controller = ReportController(

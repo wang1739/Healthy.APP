@@ -52,6 +52,7 @@ class ReportIntegrationTests {
         {
             jdbc.update("MERGE INTO users (id,phone,display_name,status) KEY(id) VALUES (?,?,?,'ACTIVE')", id,
                     USER_A.equals(id) ? "13000000961" : "13000000962", USER_A.equals(id) ? "小李" : "他人");
+            TestHealthAuthorization.grant(jdbc, id);
             jdbc.update("MERGE INTO health_profiles (user_id,current_step,completed) KEY(user_id) VALUES (?,7,TRUE)", id);
         }
     }

@@ -38,7 +38,8 @@ class PrivacyIntegrationTests {
     @Test
     void healthAuthorizationIsIndependentAndCanBeWithdrawnAndAcceptedAgain() throws Exception {
         mockMvc.perform(get("/api/v1/activity/types").with(user(USER)))
-                .andExpect(status().isOk());
+                .andExpect(status().isLocked())
+                .andExpect(jsonPath("$.code").value("HEALTH_AUTHORIZATION_REQUIRED"));
         mockMvc.perform(get("/api/v1/privacy").with(user(USER)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.healthAuthorized").value(false))
                 .andExpect(jsonPath("$.latestDocuments.length()").value(2));
@@ -51,6 +52,8 @@ class PrivacyIntegrationTests {
         mockMvc.perform(get("/api/v1/privacy").with(user(USER)))
                 .andExpect(jsonPath("$.healthAuthorized").value(true))
                 .andExpect(jsonPath("$.acceptedHealthVersion").value("2026-09"));
+        mockMvc.perform(get("/api/v1/activity/types").with(user(USER)))
+                .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/v1/privacy/health-authorization/withdraw").with(user(USER)))
                 .andExpect(status().isNoContent());
@@ -67,6 +70,11 @@ class PrivacyIntegrationTests {
                 .andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/data-exports").with(user(USER)))
                 .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/privacy/health-authorization/withdraw").with(user(USER)))
+                .andExpect(status().isNoContent());
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM consent_events WHERE user_id=? AND action='WITHDRAW'",
+                Integer.class, USER)).isEqualTo(1);
 
         mockMvc.perform(post("/api/v1/privacy/consents").with(user(USER))
                         .contentType(MediaType.APPLICATION_JSON).content("""

@@ -53,6 +53,7 @@ class TaskIntegrationTests {
             jdbc.update("DELETE FROM health_profiles WHERE user_id=?", id);
             jdbc.update("MERGE INTO users (id,phone,status) KEY(id) VALUES (?,?,'ACTIVE')", id,
                     USER_A.equals(id) ? "13000000931" : "13000000932");
+            TestHealthAuthorization.grant(jdbc, id);
         }
     }
 

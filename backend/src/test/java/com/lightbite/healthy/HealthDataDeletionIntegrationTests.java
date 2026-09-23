@@ -32,6 +32,7 @@ class HealthDataDeletionIntegrationTests {
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
+        jdbc.execute("DROP TABLE IF EXISTS qa_hydration_guard");
         jdbc.update("DELETE FROM health_report_sources WHERE report_id IN (SELECT id FROM health_reports WHERE user_id=?)", USER);
         jdbc.update("DELETE FROM health_reports WHERE user_id=?", USER);
         jdbc.update("DELETE FROM health_data_deletion_jobs WHERE user_id=?", USER);
@@ -49,6 +50,7 @@ class HealthDataDeletionIntegrationTests {
         jdbc.update("DELETE FROM health_profiles WHERE user_id=?", USER);
         jdbc.update("DELETE FROM verification_codes WHERE phone=?", PHONE);
         jdbc.update("MERGE INTO users (id,phone,status) KEY(id) VALUES (?,?,'ACTIVE')", USER, PHONE);
+        TestHealthAuthorization.grant(jdbc, USER);
         jdbc.update("INSERT INTO hydration_entries (id,user_id,amount_ml,occurred_at,timezone,source,idempotency_key) "
                 + "VALUES ('delete-water',?,300,CURRENT_TIMESTAMP,'Asia/Shanghai','CUSTOM','delete-water')", USER);
         report("related-report", "related-key", 1);
@@ -271,6 +273,53 @@ class HealthDataDeletionIntegrationTests {
                         .content("{\"phone\":\"%s\",\"purpose\":\"HEALTH_DATA_DELETE\"}".formatted(PHONE)))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         return JsonPath.read(body, "$.debugCode");
+    }
+
+    @Test
+    void closedDateRangeIncludesBothBoundaries() throws Exception {
+        jdbc.update("INSERT INTO hydration_entries (id,user_id,amount_ml,occurred_at,timezone,source,idempotency_key) VALUES "
+                        + "('range-start',?,200,TIMESTAMP '2026-01-01 00:00:00','Asia/Shanghai','CUSTOM','range-start'),"
+                        + "('range-end',?,200,TIMESTAMP '2026-01-02 23:59:59','Asia/Shanghai','CUSTOM','range-end'),"
+                        + "('range-outside',?,200,TIMESTAMP '2026-01-03 00:00:00','Asia/Shanghai','CUSTOM','range-outside')",
+                USER, USER, USER);
+        String codeBody = mockMvc.perform(post("/api/v1/auth/sms/send").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"phone\":\"%s\",\"purpose\":\"HEALTH_DATA_DELETE\"}".formatted(PHONE)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String code = JsonPath.read(codeBody, "$.debugCode");
+
+        mockMvc.perform(post("/api/v1/health-data-deletion").with(user(USER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"dataTypes\":[\"HYDRATION\"],\"fromDate\":\"2026-01-01\","
+                                + "\"toDate\":\"2026-01-02\",\"code\":\"%s\"}".formatted(code)))
+                .andExpect(status().isOk());
+
+        assertThat(count("hydration_entries", "id IN ('range-start','range-end')")).isZero();
+        assertThat(count("hydration_entries", "id='range-outside'")).isEqualTo(1);
+    }
+
+    @Test
+    void databaseFailureRollsBackSourceReportAndJobTogether() throws Exception {
+        jdbc.execute("CREATE TABLE qa_hydration_guard (entry_id VARCHAR(36) PRIMARY KEY, "
+                + "CONSTRAINT fk_qa_hydration_guard FOREIGN KEY (entry_id) REFERENCES hydration_entries(id))");
+        jdbc.update("INSERT INTO qa_hydration_guard (entry_id) VALUES ('delete-water')");
+        try {
+            String codeBody = mockMvc.perform(post("/api/v1/auth/sms/send").contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"phone\":\"%s\",\"purpose\":\"HEALTH_DATA_DELETE\"}".formatted(PHONE)))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+            String code = JsonPath.read(codeBody, "$.debugCode");
+
+            mockMvc.perform(post("/api/v1/health-data-deletion").with(user(USER))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"dataTypes\":[\"HYDRATION\"],\"code\":\"%s\"}".formatted(code)))
+                    .andExpect(status().is5xxServerError());
+
+            assertThat(count("hydration_entries", "id='delete-water'")).isEqualTo(1);
+            assertThat(count("health_reports", "id='related-report'")).isEqualTo(1);
+            assertThat(count("health_report_sources", "report_id='related-report'")).isEqualTo(1);
+            assertThat(count("health_data_deletion_jobs", "user_id='" + USER + "'")).isZero();
+        } finally {
+            jdbc.execute("DROP TABLE qa_hydration_guard");
+        }
     }
 
     private void report(String id, String key, int version) {

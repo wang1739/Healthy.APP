@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -53,6 +54,8 @@ class DataExportIntegrationTests {
         });
         jdbc.update("DELETE FROM meal_entries WHERE id='export-meal'");
         jdbc.update("DELETE FROM hydration_entries WHERE id='export-water'");
+        jdbc.update("DELETE FROM health_report_sources WHERE report_id='export-report'");
+        jdbc.update("DELETE FROM health_reports WHERE id='export-report'");
         jdbc.update("DELETE FROM verification_codes WHERE phone=?", PHONE);
     }
 
@@ -74,6 +77,13 @@ class DataExportIntegrationTests {
         plans.create(userId, null);
         String planId = jdbc.queryForObject("SELECT id FROM health_plans WHERE user_id=?", String.class, userId);
         plans.recalculate(userId, planId, new PlanDtos.RecalculateRequest(1));
+        jdbc.update("INSERT INTO health_reports (id,user_id,report_type,period_start,period_end,timezone,period_status,"
+                        + "version,rules_version,data_cutoff_at,input_hash,snapshot_json,idempotency_key) "
+                        + "VALUES ('export-report',?,'DAILY',CURRENT_DATE,CURRENT_DATE,'Asia/Shanghai','COMPLETE',1,'v1',"
+                        + "CURRENT_TIMESTAMP,?,'{\"conclusion\":\"饮水和运动保持稳定\",\"keyMetrics\":[{\"label\":\"饮水\",\"value\":\"1800\",\"unit\":\"毫升\"}],"
+                        + "\"advice\":[{\"title\":\"继续记录\",\"description\":\"保持规律记录习惯\"}],"
+                        + "\"disclaimer\":\"本报告仅用于健康记录回顾，不构成医疗诊断或治疗建议。\"}',?)",
+                userId, "0".repeat(64), "export-report-key");
         jdbc.update("INSERT INTO meal_entries (id,user_id,entry_date,meal_type,food_name_snapshot,grams,"
                         + "calories_snapshot,protein_snapshot,carbs_snapshot,fat_snapshot,idempotency_key) "
                         + "VALUES ('export-meal',?,CURRENT_DATE,'BREAKFAST','燕麦粥',180,210,8,36,4,'export-meal')", userId);
@@ -94,10 +104,14 @@ class DataExportIntegrationTests {
             assertThat(document.isEncrypted()).isTrue();
             assertThat(document.getNumberOfPages()).isPositive();
             String text = new PDFTextStripper().getText(document);
-            assertThat(text).contains("小轻", "身高：165", "计划版本 1（当前版本，计划状态：进行中", "燕麦粥", "180 克", "350 毫升")
-                    .doesNotContain(PHONE, "计划版本 2", "export-meal", "export-water", "user_id", "password",
-                            "token", "验证码");
+            assertThat(text).contains("小轻", "身高：165", "计划版本 1（当前版本，计划状态：进行中", "燕麦粥",
+                            "180 克", "350 毫升")
+                    .contains("饮水和运动保持稳定", "饮水：1800 毫升", "继续记录：保持规律记录习惯", "不构成医疗诊断")
+                    .doesNotContain(PHONE, "计划版本 2", "export-meal", "export-water", "export-report", "user_id",
+                            "password", "token", "验证码");
         }
+        mockMvc.perform(get("/api/v1/data-exports/" + id + "/download").with(user("another-user")))
+                .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/v1/data-exports/" + id + "/download")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk());
