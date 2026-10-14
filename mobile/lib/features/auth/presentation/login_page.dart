@@ -24,6 +24,7 @@ class _LoginPageState extends State<LoginPage> {
   final _password = TextEditingController();
   bool _passwordMode = false;
   bool _accepted = false;
+  bool _healthAccepted = false;
   bool _busy = false;
   String? _message;
 
@@ -52,6 +53,10 @@ class _LoginPageState extends State<LoginPage> {
       setState(() => _message = '请先同意用户协议与隐私政策');
       return;
     }
+    if (!_healthAccepted) {
+      setState(() => _message = '请先同意健康数据授权说明');
+      return;
+    }
     await _run(() async {
       final deviceName = Theme.of(context).platform == TargetPlatform.android
           ? 'Android 手机'
@@ -68,8 +73,32 @@ class _LoginPageState extends State<LoginPage> {
               password: _password.text,
               deviceName: deviceName,
             );
+      if (result.accountStatus != 'DELETION_PENDING') {
+        await _ensureHealthAuthorization();
+      }
       widget.onLoggedIn(result);
     });
+  }
+
+  Future<void> _ensureHealthAuthorization() async {
+    final privacy = await widget.api.getPrivacy();
+    if (privacy['healthAuthorized'] == true) return;
+    final documents = privacy['latestDocuments'] as List? ?? const [];
+    Map<String, dynamic>? authorization;
+    for (final value in documents) {
+      final document = Map<String, dynamic>.from(value as Map);
+      if (document['type'] == 'HEALTH_DATA_AUTHORIZATION') {
+        authorization = document;
+        break;
+      }
+    }
+    if (authorization == null) {
+      throw const FormatException('未找到健康数据授权说明');
+    }
+    await widget.api.acceptConsent(
+      'HEALTH_DATA_AUTHORIZATION',
+      authorization['version'].toString(),
+    );
   }
 
   Future<void> _run(Future<void> Function() action) async {
@@ -172,6 +201,14 @@ class _LoginPageState extends State<LoginPage> {
                     onChanged: (value) =>
                         setState(() => _accepted = value ?? false),
                     title: const Text('我已阅读并同意《用户协议》与《隐私政策》'),
+                  ),
+                  CheckboxListTile(
+                    value: _healthAccepted,
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    onChanged: (value) =>
+                        setState(() => _healthAccepted = value ?? false),
+                    title: const Text('我已阅读并同意《健康数据授权说明》'),
                   ),
                   if (_message != null) ...[
                     const SizedBox(height: 8),
